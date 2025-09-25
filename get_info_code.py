@@ -678,8 +678,8 @@ def eval_edu(folder_name, evaluation_model, write):
 
 if __name__ == "__main__":
     
-    evaluation_models = ["Llama2-13B"]
-    prompt = ["cot", "vanilla"]
+    evaluation_models = ["CodeLlama-7b-Instruct-hf"]
+    prompt = ["vanilla", "cot"]
     budge_limitation = "Any"
     Strategy = "BASE"
     write = True
@@ -692,5 +692,5 @@ if __name__ == "__main__":
             eval_med(folder_name, evaluation_model, write)
             print("\n----------------\n")
             folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_{budge_limitation}/func_edu/"
-            # eval_edu(folder_name, evaluation_model, write)
+            eval_edu(folder_name, evaluation_model, write)
 

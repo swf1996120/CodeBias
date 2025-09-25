@@ -474,6 +474,18 @@ def main():
 
     print(f"Processing {len(prompts)} prompts")
 
+    # Make sure the output directory exists
+    if args.rana:
+        args.output_file = f"results/RAnA/{args.model.split('/')[-1]}_{args.prompt_type}_{args.budget_thinking if args.budget_thinking else 'Any'}/{args.scenarior}/{args.category}/{args.attribute}/result.json"
+    if args.swap:
+        args.output_file = f"results/RSwA/{args.model.split('/')[-1]}_{args.prompt_type}_{args.budget_thinking if args.budget_thinking else 'Any'}/{args.scenarior}/{args.category}/{args.attribute}/result.json"
+       
+    if not args.rana and not args.swap:
+        args.output_file = f"results/BASE/{args.model.split('/')[-1]}_{args.prompt_type}_{args.budget_thinking if args.budget_thinking else 'Any'}/{args.scenarior}/{args.category}/{args.attribute}_result.json"
+        
+    if os.path.exists(args.output_file):
+        return
+
     # Check if should use API or vLLM
     is_api_only_model = args.model.lower() in API_ONLY_MODELS
     use_api = is_api_only_model and args.model_provider in [
@@ -523,7 +535,8 @@ def main():
             enforce_eager=args.eager,
             generation_config="auto",
             trust_remote_code=True,
-            gpu_memory_utilization=0.7 if "s1" in args.model.lower() else 0.9,
+            # gpu_memory_utilization=0.7 if "s1" in args.model.lower() else 0.9,
+            # gpu_memory_utilization=0.6 if "s1" in args.model.lower() else 0.6,
         )
 
         sampling_params = llm.get_default_sampling_params()
@@ -810,14 +823,7 @@ def main():
         "data": filtered_data,  # Store only the filtered data
     }
 
-    # Make sure the output directory exists
-    if args.rana:
-        args.output_file = f"results/RAnA/{args.model.split('/')[-1]}_{args.prompt_type}_{args.budget_thinking if args.budget_thinking else 'Any'}/{args.scenarior}/{args.category}/{args.attribute}/result.json"
-    if args.swap:
-        args.output_file = f"results/RSwA/{args.model.split('/')[-1]}_{args.prompt_type}_{args.budget_thinking if args.budget_thinking else 'Any'}/{args.scenarior}/{args.category}/{args.attribute}/result.json"
-       
-    if not args.rana and not args.swap:
-        args.output_file = f"results/BASE/{args.model.split('/')[-1]}_{args.prompt_type}_{args.budget_thinking if args.budget_thinking else 'Any'}/{args.scenarior}/{args.category}/{args.attribute}_result.json"
+
             
     os.makedirs(os.path.dirname(os.path.abspath(args.output_file)), exist_ok=True)
 

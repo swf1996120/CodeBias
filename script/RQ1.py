@@ -14,6 +14,7 @@ MODEL_PROVIDER = {
   "/home/tangxinran/QueryAttack/models/qwen3-32B": "vllm",
   "/home/tangxinran/QueryAttack/models/deepseek-coder-7b-instruct-v1.5": "vllm",
   "/home/tangxinran/QueryAttack/models/CodeLlama-7b-Instruct-hf": "vllm",
+  "/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B": "vllm"
 }
 PY_SCRIPT = "eval_cp_privacy_V1.py"
 
@@ -132,8 +133,8 @@ def run_function_evaluation_vllm(scenarior=None, category=None, attribute=None):
 
 if __name__ == "__main__":
     # 用法1：全量遍历
-    MODEL = ["/home/tangxinran/QueryAttack/models/qwen3-32B"]
+    MODEL = ["/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B"]
     PROMPT_TYPES = ["vanilla", "cot"]
-    run_function_evaluation_vllm(scenarior="func_job", category="race", attribute="asian")
+    run_function_evaluation_vllm()
     # 用法2：只运行指定路径
     # run_function_evaluation(scenarior="func_edu", category="gender", attribute="male"2)

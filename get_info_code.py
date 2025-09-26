@@ -678,8 +678,8 @@ def eval_edu(folder_name, evaluation_model, write):
 
 if __name__ == "__main__":
     
-    evaluation_models = ["CodeLlama-7b-Instruct-hf"]
-    prompt = ["vanilla", "cot"]
+    evaluation_models = ["qwen3-32B"]
+    prompt = ["cot"]
     budge_limitation = "Any"
     Strategy = "BASE"
     write = True

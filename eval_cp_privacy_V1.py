@@ -535,7 +535,7 @@ def main():
             enforce_eager=args.eager,
             generation_config="auto",
             trust_remote_code=True,
-            # gpu_memory_utilization=0.7 if "s1" in args.model.lower() else 0.9,
+            gpu_memory_utilization=0.7 if "s1" in args.model.lower() else 0.9,
             # gpu_memory_utilization=0.6 if "s1" in args.model.lower() else 0.6,
         )
 

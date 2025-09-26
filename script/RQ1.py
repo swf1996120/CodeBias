@@ -135,6 +135,6 @@ if __name__ == "__main__":
     # 用法1：全量遍历
     MODEL = ["/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B"]
     PROMPT_TYPES = ["vanilla", "cot"]
-    run_function_evaluation_vllm()
+    run_function_evaluation_vllm(scenarior="func_job", category="gender", attribute="male")
     # 用法2：只运行指定路径
     # run_function_evaluation(scenarior="func_edu", category="gender", attribute="male"2)

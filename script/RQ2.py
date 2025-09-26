@@ -16,17 +16,29 @@ MODEL_PROVIDER = {
     "/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B": "vllm"
 }
 PY_SCRIPT = "eval_cp_privacy_V1.py"
+MAX_RETRIES = 3  # 最多重试次数
 
 # 你可以根据需要调整推理长度
 REASONING_LENGTHS = [64, 128, 256, 512, 1024, 2048, 4096]
 
 def run_reasoning_length_experiment():
     SCENARIORS = ["func_edu", "func_job", "multi_med"]
-    MODEL = ["/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B"]
-    PROMPT_TYPES = ["vanilla", "cot"]
+    MODEL = [
+    # "meta-llama/Llama-3.1-8B-Instruct",
+    # "Qwen/Qwen2.5-Coder-7B-Instruct",
+    # "Qwen/Qwen3-8B",
+    # "/home/tangxinran/QueryAttack/models/Llama2-13B",
+    # "/home/tangxinran/.cache/huggingface/hub/models--deepseek-ai--DeepSeek-R1-Distill-Llama-8B/snapshots/6a6f4aa4197940add57724a7707d069478df56b1",
+    "Qwen/Qwen3-14B",
+    "/home/tangxinran/QueryAttack/models/qwen3-32B",
+    "/home/tangxinran/QueryAttack/models/deepseek-coder-7b-instruct-v1.5",
+    "/home/tangxinran/QueryAttack/models/CodeLlama-7b-Instruct-hf",
+    "/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B"
+    ]
+    PROMPT_TYPES = ["cot"]
     for model in MODEL:
         for scen in SCENARIORS:
-            scenarior_path = os.path.join("..", scen)
+            scenarior_path = os.path.join(".", scen)
             if not os.path.isdir(scenarior_path):
                 continue
             for cat in os.listdir(scenarior_path):
@@ -54,7 +66,19 @@ def run_reasoning_length_experiment():
                             ]
                             # 输出文件名建议在eval_cp_privacy_V1.py里自动带上reasoning_length
                             print("Running:", " ".join(cmd))
-                            subprocess.run(cmd, env=os.environ.copy())
-
+                            retries = 0
+                            while retries < MAX_RETRIES:
+                                try:
+                                    result = subprocess.run(cmd, env=os.environ.copy(), check=True)
+                                    break  # 成功就退出循环
+                                except subprocess.CalledProcessError as e:
+                                    retries += 1
+                                    print(f"Error running command (attempt {retries}/{MAX_RETRIES}): {e}")
+                                    if retries >= MAX_RETRIES:
+                                        print(f"Command failed after {MAX_RETRIES} retries, skipping...")
+                                    else:
+                                        print("Retrying...")
+                                        time.sleep(5)  # 等待 5 秒再重试
+                                
 if __name__ == "__main__":
     run_reasoning_length_experiment()

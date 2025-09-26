@@ -678,8 +678,8 @@ def eval_edu(folder_name, evaluation_model, write):
 
 if __name__ == "__main__":
     
-    evaluation_models = ["qwen3-32B"]
-    prompt = ["cot"]
+    evaluation_models = ["DeepSeek-R1-Distill-Qwen-7B"]
+    prompt = ["cot", "vanilla"]
     budge_limitation = "Any"
     Strategy = "BASE"
     write = True

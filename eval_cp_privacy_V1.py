@@ -6,8 +6,8 @@ import re
 os.environ["NCCL_P2P_DISABLE"] = "1"
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
-# os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
-os.environ["HF_TOKEN"] = "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"
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+# os.environ["HF_TOKEN"] = "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"
 
 
 

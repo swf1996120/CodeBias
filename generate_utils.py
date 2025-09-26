@@ -1306,72 +1306,161 @@ def generate_openrouter_hide_data(
     print(f"Completed {len(final_outputs)} OpenRouter API calls with hide_data")
     return final_outputs, generation_ids, generation_id_to_prompt_idx
 
+def _is_qwen3_thinker(args) -> bool:
+    """仅用模型名判断是否走 Qwen3 思考分支。"""
+    name = (getattr(args, "model", "") or "").lower()
+    return "qwen3" in name
 
+def _apply_template_to_str(tokenizer, messages, enable_thinking: bool = True, add_generation_prompt: bool = True) -> str:
+    return tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=add_generation_prompt,
+        chat_template_kwargs={"enable_thinking": enable_thinking},
+    )
+
+
+# ========= 统一的带预算思考生成 =========
 def generate_with_budget(
-    llm, prompts, sampling_params, args, start_think_token, end_think_token
+    llm, prompts, sampling_params, args, start_think_token: str, end_think_token: str
 ):
-    """Generate text with a fixed token budget for the thinking phase.
-
-    This function forces the model to "think" for a specific number of tokens
-    (`args.budget_thinking`). It generates text iteratively until the budget is
-    exhausted. If the model produces an `end_think_token` before the budget is
-    used up, it is replaced with a filler phrase, and generation continues.
-
-    Parameters
-    ----------
-    llm : vllm.LLM
-        The vLLM object to use for generation.
-    prompts : list
-        A list of prompts for the model.
-    sampling_params : vllm.SamplingParams
-        The base sampling parameters for generation.
-    args : argparse.Namespace
-        Command-line arguments, must contain `budget_thinking`.
-    start_think_token : str
-        The token to prepend to the reasoning.
-    end_think_token : str
-        The token that signals the end of the reasoning phase.
-
-    Returns
-    -------
-    list of RequestOutputObj
-        A list of the final generated outputs.
     """
-
-    # Load custom chat template
+    针对 Qwen3（思考模型）与 非 Qwen3（通用）统一的“思考预算生成”：
+      - 非 Qwen3：维持原先 llm.chat([...]) 的对话式增量写法；
+      - Qwen3：先用 tokenizer.apply_chat_template -> 字符串，再 llm.generate(prompt_str) 按预算迭代续写 <think>。
+    """
+    tokenizer = llm.get_tokenizer()
+    is_qwen3 = _is_qwen3_thinker(args)
+    
+    # 选择 chat_template（若提供了自定义模板则优先）
     custom_template_path = f"chat_templates/rana/{args.model.replace('/', '_')}.jinja"
     try:
         with open(custom_template_path, "r") as f:
             custom_template = f.read()
             print(f"Using custom chat template from {custom_template_path}")
     except FileNotFoundError:
-        print(
-            f"Custom template not found for {args.model} at {custom_template_path}, using default"
-        )
-        custom_template = llm.get_tokenizer().chat_template
+        print(f"Custom template not found for {args.model} at {custom_template_path}, using default")
+        custom_template = tokenizer.chat_template
 
     base_params = sampling_params.clone()
     ignore_strs = ["Oh wait", "Wait", "But wait,"]
     outputs = []
+    
+    # 统一 answer 阶段 token 预算（加速 & 简化）
+    max_total = getattr(args, "max_tokens", 10000)
+    answer_budget = max(32, max_total - getattr(args, "budget_thinking", 0))
 
+    # ===================== Qwen3 分支：字符串 prompt + generate =====================
+    if is_qwen3:
+        prompts_with_reasoning = []
+        only_reasonings = []
+
+        # for messages in tqdm(prompts, desc="Processing prompts (reasoning)"):
+        for messages in prompts:
+            
+            # 1) 到 assistant 起点（模板已自动插入 <think>），我们只需要接着写思考
+            full_prompt_str = _apply_template_to_str(tokenizer, messages, enable_thinking=True, add_generation_prompt=True)
+            # 确保最后有 "<think>" 打开（通常模板已添加）
+            if not full_prompt_str.rstrip().endswith("<think>") and start_think_token in full_prompt_str:
+                # 若模板放在中间或末尾已不是 <think> 结尾，这里追加一个换行更安全
+                full_prompt_str = full_prompt_str + "\n"
+            elif full_prompt_str.rstrip().endswith("<think>"):
+                full_prompt_str += "\n"
+
+            remaining = args.budget_thinking
+            
+            reasoning_text = ""
+
+            while remaining > 0:
+
+                think_params = base_params.clone()
+                think_params.max_tokens = remaining
+                think_params.min_tokens = 1
+                think_params.stop = [end_think_token, f" {end_think_token}"]
+                think_params.skip_special_tokens = False
+                think_params.include_stop_str_in_output = True
+
+                think_out = llm.generate(full_prompt_str, sampling_params=think_params, use_tqdm=False)[0]
+                text = think_out.outputs[0].text
+                
+                reasoning_text += text
+                
+                token_ids = getattr(think_out.outputs[0], "token_ids", None)
+                tokens_used = len(token_ids) if token_ids else len(tokenizer.encode(text))
+
+                remaining -= tokens_used
+
+                if text.endswith(end_think_token):
+                    if remaining > 0:
+                        # 提前闭合，替换掉 </think> 继续写（防止早停）
+                        trimmed = text[: -len(end_think_token)] + random.choice(ignore_strs)
+                        full_prompt_str += trimmed
+                        continue
+                    else:
+                        # 正好到预算，直接接受
+                        full_prompt_str += text
+                        break
+                else:
+                    full_prompt_str += text
+                    if remaining > 0:
+                        continue
+                    else:
+                        full_prompt_str += f"\n{end_think_token}"
+                        break
+                    
+            reasoning_text += f"\n{end_think_token}"
+            # 2) 思考结束，进入答案阶段
+            if not full_prompt_str.rstrip().endswith(end_think_token):
+                full_prompt_str += f"\n{end_think_token}"
+                reasoning_text += f"\n{end_think_token}"
+            
+            prompts_with_reasoning.append(full_prompt_str)
+            
+            only_reasonings.append(reasoning_text)
+            
+        # 批量生成答案（加速）
+        answer_params = base_params.clone()
+        answer_params.max_tokens = answer_budget
+
+        ans_outs = llm.generate(
+            prompts_with_reasoning,
+            sampling_params=answer_params,
+            use_tqdm=False
+        )
+        
+        for i, ans in enumerate(ans_outs):
+            answer_text = ans.outputs[0].text
+            # 让输出包含“思考+Answer 提示+答案”
+            reasoning_text = only_reasonings[i]
+            if answer_text.endswith("</think>"):
+                answer_text = answer_text[:-len("</think>")]
+            ans.outputs[0].text = reasoning_text + answer_text
+            ans.prompt = full_prompt_str
+            outputs.append(ans)
+            
+        return outputs
+
+    # ===================== 非 Qwen3 分支：messages + chat =====================
     prompts_with_reasoning = []
+    only_reasonings = []
+    rendered_prompts = []
     for prompt in tqdm(prompts, desc="Processing prompts (reasoning)"):
-        # Initialize the chat prompt messages
         full_prompt = deepcopy(prompt)
-        full_prompt.append({"role": "assistant", "content": start_think_token + "\n"})
+        # 显式在 assistant 内容中打开 “思考”
+        # full_prompt.append({"role": "assistant", "content": start_think_token + "\n"})
 
         remaining = args.budget_thinking
+        reasoning_text = ""
+
         while remaining > 0:
             think_params = base_params.clone()
             think_params.max_tokens = remaining
             think_params.min_tokens = 1
             think_params.stop = [end_think_token, f" {end_think_token}"]
             think_params.skip_special_tokens = False
-            think_params.min_tokens = 1
             think_params.include_stop_str_in_output = True
-            # Determine flags for this iteration
 
-            think_outs = llm.chat(
+            outs = llm.chat(
                 [full_prompt],
                 sampling_params=think_params,
                 chat_template=custom_template,
@@ -1379,57 +1468,69 @@ def generate_with_budget(
                 continue_final_message=True,
                 use_tqdm=False,
             )
-            # Reset first_loop after first iteration
-            think_out = think_outs[0]
-            text = think_out.outputs[0].text
-            try:
-                tokens_used = len(think_out.outputs[0].token_ids)
-            except AttributeError:
-                tokens_used = len(llm.get_tokenizer().encode(text))
+            out = outs[0]
+            text = out.outputs[0].text
+            reasoning_text += text
+            
+            token_ids = getattr(out.outputs[0], "token_ids", None)
+            tokens_used = len(token_ids) if token_ids else len(tokenizer.encode(text))
             remaining -= tokens_used
 
             if text.endswith(end_think_token):
                 if remaining > 0:
-                    # Remove the end token and insert an ignore string
                     trimmed = text[: -len(end_think_token)] + random.choice(ignore_strs)
                     full_prompt[-1]["content"] += trimmed
                     continue
                 else:
+                    full_prompt[-1]["content"] += text
                     break
             else:
-                # Append generated text to the last assistant message
                 full_prompt[-1]["content"] += text
-                continue
+                if remaining > 0:
+                    continue
+                else:
+                    full_prompt[-1]["content"] += f"\n{end_think_token}"
+                    break
+        
+        reasoning_text += f"\n{end_think_token}"
 
-        # Append final thinking termination and prompt for answer
-        full_prompt[-1]["content"] += (
-            f" Okay, I think I have finished thinking.\n{end_think_token}\nAnswer: "
-        )
+        # 闭合思考并提示回答
+        if not full_prompt[-1]["content"].rstrip().endswith(end_think_token):
+            full_prompt[-1]["content"] += f"\n{end_think_token}"
+            reasoning_text += f"\n{end_think_token}"
+
         prompts_with_reasoning.append(full_prompt)
-
-    # Generate the answer
-    answer_params = base_params.clone()
-    answer_params.max_tokens = 500
-    answer_outs = llm.chat(
-        prompts_with_reasoning,
-        sampling_params=answer_params,
-        chat_template=custom_template,
-        add_generation_prompt=False,
-        continue_final_message=True,
-    )
-    for i, answer_out in enumerate(answer_outs):
-        answer_outs[i].outputs[0].text = (
-            prompts_with_reasoning[i][-1]["content"] + answer_outs[i].outputs[0].text
-        )
-        answer_outs[i].prompt = llm.get_tokenizer().apply_chat_template(
-            prompts_with_reasoning[i],
+        only_reasonings.append(reasoning_text)
+        rendered = tokenizer.apply_chat_template(
+            full_prompt,
             chat_template=custom_template,
             tokenize=False,
             add_generation_prompt=False,
             continue_final_message=True,
         )
-        outputs.append(answer_outs[i])
+        rendered_prompts.append(rendered)
+    
+    answer_params = base_params.clone()
+    answer_params.max_tokens = answer_budget
 
+    ans_outs = llm.chat(
+        prompts_with_reasoning,
+        sampling_params=answer_params,
+        chat_template=custom_template,
+        add_generation_prompt=False,
+        continue_final_message=True,
+        use_tqdm=False,
+    )
+    
+    for i, ans in enumerate(ans_outs):
+        answer_text = ans.outputs[0].text
+        # 输出 = 渲染后的“思考+Answer: ” + 答案
+        if answer_text.endswith("</think>"):
+            answer_text = answer_text[:-len("</think>")]
+        ans.outputs[0].text = only_reasonings[i] + answer_text
+        ans.prompt = rendered_prompts[i]
+        outputs.append(ans)        
+        
     return outputs
 
 

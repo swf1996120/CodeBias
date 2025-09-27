@@ -1585,7 +1585,8 @@ def generate_with_budget(
 
         while active_indices:
             # 每轮用该批里的最小剩余，避免超预算（若你用 per-request SamplingParams 就更优了）
-            step = max(1, min(remaining[i] for i in active_indices))
+            step = max(1, max(remaining[i] for i in active_indices))
+            print(f"The new iteration max step {step}")
             think_params = base_params.clone()
             think_params.max_tokens = step
             think_params.min_tokens = 1
@@ -1594,32 +1595,51 @@ def generate_with_budget(
             think_params.include_stop_str_in_output = True
 
             outs = llm.generate(active_prompts, sampling_params=think_params)
+            
             next_idx, next_prompts = [], []
 
             for k, out in enumerate(outs):
+                #idx: 原位置
                 idx = active_indices[k]
                 text = out.outputs[0].text
-                final_reasonings[idx] += text
-
                 token_ids = getattr(out.outputs[0], "token_ids", None)
-                used = len(token_ids) if token_ids else len(tokenizer.encode(text))
-                remaining[idx] = max(0, remaining[idx] - used)
+                
+                # —— 新增：按样本的剩余预算截断 ——
+                if token_ids is not None:
+                    # 截到本样本的剩余预算
+                    if len(token_ids) > remaining[idx]:
+                        token_ids = token_ids[: remaining[idx]]
+                        text = tokenizer.decode(token_ids, skip_special_tokens=True)
+                    used = len(token_ids)
+                else:
+                    # 没有 token_ids 可退化用 encode 估计（可能与真实切分略有出入）
+                    est_ids = tokenizer.encode(text, add_special_tokens=False)
+                    if len(est_ids) > remaining[idx]:
+                        est_ids = est_ids[: remaining[idx]]
+                        text = tokenizer.decode(est_ids, skip_special_tokens=True)
+                    used = len(est_ids)                
+                
+                
+                remaining[idx] -= used
 
                 closed = text.rstrip().endswith(end_think_token)
-                cur = active_prompts[k] + text
-
+                
                 if remaining[idx] > 0:
                     if closed:
                         # 提前闭合：删掉 </think>，接 filler 继续写
                         trimmed = text[: -len(end_think_token)] + random.choice(IGNORE_STRS)
+                        final_reasonings[idx] += trimmed
                         next_prompts.append(active_prompts[k] + trimmed)
                     else:
-                        next_prompts.append(cur)
+                        next_prompts.append(active_prompts[k] + text)
+                        final_reasonings[idx] += text
                     next_idx.append(idx)
                 else:
                     # 预算用完，规范闭合+收尾句
-                    cur = _ensure_close_with_phrase(cur, end_think_token)
-                    final_prompt_strs[idx] = cur
+                    suffix = _ensure_close_with_phrase(text, end_think_token)
+                    final_reasonings[idx] += suffix
+                    final_prompt_strs[idx] = active_prompts[k] + suffix
+                    
             active_indices, active_prompts = next_idx, next_prompts
 
         # 规范化“思考文本”的闭合
@@ -1636,7 +1656,6 @@ def generate_with_budget(
         ans_outs = llm.generate(
             final_prompt_strs,         # 直接用字符串 prompt（Qwen3 分支）；非 Qwen3 用 chat 版同理
             sampling_params=answer_params,
-            use_tqdm=False,
         )
 
         # 把“思考 + 答案”拼回到同一个 outputs[i].text 里，保持顺序不变
@@ -1650,7 +1669,7 @@ def generate_with_budget(
                 answer_text = answer_text[len(end_think_token):]
                 
             ans.outputs[0].text = final_reasonings[i] + answer_text
-            ans.prompt = final_prompt_strs[i]        # 记录用于生成答案的最终 prompt
+            ans.prompt = raw_prompt_strs[i]        # 记录用于生成答案的最终 prompt
             outputs.append(ans)
 
         return outputs
@@ -1666,7 +1685,9 @@ def generate_with_budget(
 
 
     while active_indices:
-        step = max(1, min(remaining[i] for i in active_indices))
+        step = max(1, max(remaining[i] for i in active_indices))
+        print(f"The new iteration max step {step}")
+
         think_params = base_params.clone()
         think_params.max_tokens = step
         think_params.min_tokens = 1
@@ -1680,34 +1701,52 @@ def generate_with_budget(
             chat_template=custom_template,
             add_generation_prompt=False,
             continue_final_message=True,
-            use_tqdm=False,
         )
         next_idx, next_msgs = [], []
 
         for k, out in enumerate(outs):
             idx = active_indices[k]
             text = out.outputs[0].text
-            final_reasonings[idx] += text
-
             token_ids = getattr(out.outputs[0], "token_ids", None)
-            used = len(token_ids) if token_ids else len(tokenizer.encode(text))
-            remaining[idx] = max(0, remaining[idx] - used)
+            
+            # —— 新增：按样本的剩余预算截断 ——
+            if token_ids is not None:
+                # 截到本样本的剩余预算
+                if len(token_ids) > remaining[idx]:
+                    token_ids = token_ids[: remaining[idx]]
+                    text = tokenizer.decode(token_ids, skip_special_tokens=True)
+                used = len(token_ids)
+            else:
+                # 没有 token_ids 可退化用 encode 估计（可能与真实切分略有出入）
+                est_ids = tokenizer.encode(text, add_special_tokens=False)
+                if len(est_ids) > remaining[idx]:
+                    est_ids = est_ids[: remaining[idx]]
+                    text = tokenizer.decode(est_ids, skip_special_tokens=True)
+                used = len(est_ids)                
+            
+            
+            remaining[idx] -= used 
 
             closed = text.rstrip().endswith(end_think_token)
 
             if remaining[idx] > 0:
                 if closed:
                     trimmed = text[: -len(end_think_token)] + random.choice(IGNORE_STRS)
+                    final_reasonings[idx] += trimmed
                     active_msgs[k][-1]["content"] += trimmed
                 else:
                     active_msgs[k][-1]["content"] += text
+                    final_reasonings[idx] += text
                 next_idx.append(idx)
                 next_msgs.append(active_msgs[k])
             else:
                 # 预算用尽：规范闭合+收尾句
-                active_msgs[k][-1]["content"] = _ensure_close_with_phrase(
-                    active_msgs[k][-1]["content"] + text, end_think_token
-                )
+                suffix = _ensure_close_with_phrase(text, end_think_token)
+                
+                active_msgs[k][-1]["content"] += suffix
+                
+                final_reasonings[idx] += suffix
+
                 final_msgs[idx] = deepcopy(active_msgs[k])          # ★ 新增：关键一步
                 
                 rendered = tokenizer.apply_chat_template(
@@ -1727,7 +1766,10 @@ def generate_with_budget(
 
     # ★★★ 这里就是 prompts_with_reasoning（答案阶段的输入）
     prompts_with_reasoning = final_msgs
+    
     answer_params = base_params.clone()
+    max_total = getattr(args, "max_tokens", 10000)
+    answer_budget = max(32, max_total - getattr(args, "budget_thinking", 0))
     answer_params.max_tokens = answer_budget
 
     ans_outs = llm.chat(
@@ -1736,19 +1778,25 @@ def generate_with_budget(
         chat_template=custom_template,
         add_generation_prompt=False,
         continue_final_message=True,
-        use_tqdm=False,
     )
-    
+    outputs = []
     for i, ans in enumerate(ans_outs):
         answer_text = ans.outputs[0].text
         # 模型有时会把 </think> 再复述，做个稳妥清理（首尾都处理一下）
-        if answer_text.endswith(end_think_token):
+        if answer_text.rstrip().endswith(end_think_token):
             answer_text = answer_text[:-len(end_think_token)]
-        if answer_text.startswith(end_think_token):
+        if answer_text.rstrip().startswith(end_think_token):
             answer_text = answer_text[len(end_think_token):]
             
         ans.outputs[0].text = final_reasonings[i] + answer_text
-        ans.prompt = final_rendered_prompts[i]
+        ans.prompt = tokenizer.apply_chat_template(
+                    prompts[i],
+                    chat_template=custom_template,
+                    tokenize=False,
+                    add_generation_prompt=False,
+                    continue_final_message=True,
+                )
+        
         outputs.append(ans)        
         
     return outputs    

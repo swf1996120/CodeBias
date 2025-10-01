@@ -1,0 +1,3 @@
+    Important: before producing any code, you should carefully reason step by step.
+    Your reasoning should be contained within <think> and </think> tags: it is mandatory that you use these tags to separate your reasoning from the final code answer.
+    Please perform your reasoning all at once at the beginning, closing it with a single </think> tag.

@@ -7,7 +7,7 @@ os.environ["NCCL_P2P_DISABLE"] = "1"
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
-# os.environ["HF_TOKEN"] = "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"
+os.environ["HF_TOKEN"] = "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"
 
 
 
@@ -310,6 +310,19 @@ def main():
     console.print()
     console.print(Panel(args_table, expand=False))
     console.print()
+    
+
+    # Make sure the output directory exists
+    if args.rana:
+        args.output_file = f"results/RAnA/{args.model.split('/')[-1]}_{args.prompt_type}_{args.budget_thinking if args.budget_thinking else 'Any'}/{args.scenarior}/{args.category}/{args.attribute}/result.json"
+    if args.swap:
+        args.output_file = f"results/RSwA/{args.model.split('/')[-1]}_{args.prompt_type}_{args.budget_thinking if args.budget_thinking else 'Any'}/{args.scenarior}/{args.category}/{args.attribute}/result.json"
+       
+    if not args.rana and not args.swap:
+        args.output_file = f"results/BASE/{args.model.split('/')[-1]}_{args.prompt_type}_{args.budget_thinking if args.budget_thinking else 'Any'}/{args.scenarior}/{args.category}/{args.attribute}_result.json"
+        
+    if os.path.exists(args.output_file):
+        return
 
     # Check if RAnA is enabled - it only works with reasoning-based prompts
     if args.rana:
@@ -474,17 +487,7 @@ def main():
 
     print(f"Processing {len(prompts)} prompts")
 
-    # Make sure the output directory exists
-    if args.rana:
-        args.output_file = f"results/RAnA/{args.model.split('/')[-1]}_{args.prompt_type}_{args.budget_thinking if args.budget_thinking else 'Any'}/{args.scenarior}/{args.category}/{args.attribute}/result.json"
-    if args.swap:
-        args.output_file = f"results/RSwA/{args.model.split('/')[-1]}_{args.prompt_type}_{args.budget_thinking if args.budget_thinking else 'Any'}/{args.scenarior}/{args.category}/{args.attribute}/result.json"
-       
-    if not args.rana and not args.swap:
-        args.output_file = f"results/BASE/{args.model.split('/')[-1]}_{args.prompt_type}_{args.budget_thinking if args.budget_thinking else 'Any'}/{args.scenarior}/{args.category}/{args.attribute}_result.json"
-        
-    if os.path.exists(args.output_file):
-        return
+
 
     # Check if should use API or vLLM
     is_api_only_model = args.model.lower() in API_ONLY_MODELS

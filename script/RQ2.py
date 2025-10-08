@@ -16,13 +16,13 @@ MODEL_PROVIDER = {
     "/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B": "vllm"
 }
 PY_SCRIPT = "eval_cp_privacy_V1.py"
-MAX_RETRIES = 3  # 最多重试次数
+MAX_RETRIES = 10  # 最多重试次数
 
 # 你可以根据需要调整推理长度
 REASONING_LENGTHS = [64, 128, 256, 512, 1024, 2048]
 
 def run_reasoning_length_experiment():
-    SCENARIORS = ["func_edu", "func_job", "multi_med"]
+    SCENARIORS = ["func_job", "multi_med"]
     MODEL = [
     "meta-llama/Llama-3.1-8B-Instruct",
     "Qwen/Qwen2.5-Coder-7B-Instruct",
@@ -78,7 +78,7 @@ def run_reasoning_length_experiment():
                                         print(f"Command failed after {MAX_RETRIES} retries, skipping...")
                                     else:
                                         print("Retrying...")
-                                        time.sleep(5)  # 等待 5 秒再重试
+                                        time.sleep(60)  # 等待 5 秒再重试
                                 
 if __name__ == "__main__":
     run_reasoning_length_experiment()

@@ -172,6 +172,11 @@ def parse_args():
         help="Path to OpenRouter settings JSON file",
     )
     parser.add_argument(
+        "--sample",
+        action="store_true",
+        help = "Explore the various sampling temperature settings",
+    )
+    parser.add_argument(
         "--rana",
         action="store_true",
         help="Enable Reason-Anonymize-Answer (RAnA) flow",
@@ -313,12 +318,17 @@ def main():
     
 
     # Make sure the output directory exists
-    if args.rana:
+    
+    if args.sample:
+        args.output_file = f"results/SAMPLING/{args.model.split('/')[-1]}_{args.prompt_type}_{args.budget_thinking if args.budget_thinking else 'Any'}/{args.scenarior}/{args.category}/{args.attribute}/result.json"
+    
+    elif args.rana:
         args.output_file = f"results/RAnA/{args.model.split('/')[-1]}_{args.prompt_type}_{args.budget_thinking if args.budget_thinking else 'Any'}/{args.scenarior}/{args.category}/{args.attribute}/result.json"
-    if args.swap:
+        
+    elif args.swap:
         args.output_file = f"results/RSwA/{args.model.split('/')[-1]}_{args.prompt_type}_{args.budget_thinking if args.budget_thinking else 'Any'}/{args.scenarior}/{args.category}/{args.attribute}/result.json"
-       
-    if not args.rana and not args.swap:
+        
+    else:
         args.output_file = f"results/BASE/{args.model.split('/')[-1]}_{args.prompt_type}_{args.budget_thinking if args.budget_thinking else 'Any'}/{args.scenarior}/{args.category}/{args.attribute}_result.json"
         
     if os.path.exists(args.output_file):
@@ -424,7 +434,7 @@ def main():
                         "content": f"detailed thinking {thinking}",
                     },
                 )
-            if "cot" in args.prompt_type and all(k not in args.model.lower() for k in ("qwen3", "deepseek-r1")):
+            if "cot" in args.prompt_type and all(k not in args.model.lower() for k in ("qwen3")):
                 prompt.append(
                     {
                         "role": "assistant",
@@ -436,7 +446,7 @@ def main():
                 prompt.append(
                     {
                         "role": "assistant",
-                        "content": "<think>I think I have finished thinking.",
+                        "content": "<think>I think I have finished thinking.</think>",
                     }
                 )
 
@@ -602,7 +612,7 @@ def main():
                 )
             elif args.rana and ("cot" in args.prompt_type or "reasoning" in args.prompt_type):
                 return generate_with_rana(
-                    llm=llm, prompts=batch_prompts, data=data, valid_indices=valid_indices,
+                    llm=llm, prompts=batch_prompts,
                     args=args, model_name=model_name,
                     start_think_token=start_think_token, end_think_token=end_think_token,
                     sampling_params=sampling_params,

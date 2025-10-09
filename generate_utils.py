@@ -6,7 +6,8 @@ import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Dict, List, Union
+import re
+from typing import Dict, List, Optional, Union
 
 import requests
 import torch
@@ -16,7 +17,7 @@ from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential, wait_random_exponential
 from tqdm import tqdm
 
 from cp_eval_utils import (
@@ -469,176 +470,279 @@ def display_generation_config(console, sampling_params):
     return gen_conf
 
 
+_SUMMARIZE_DEBIAS_CODE_SYSTEM = (
+    "You analyze text about code, programming.\n"
+    "Perform two steps on the INPUT TEXT:\n"
+    "Step 1 (Summarize): Summarize the given chain-of-thought into a short, information-dense reasoning"
+    "(purpose, behavior, inputs/outputs, APIs, constraints). No speculation.\n"
+    "Step 2 (Debias): Remove potentially biased/subjective/opinionated language"
+    "objective and verifiable statements about the code.\n"
+    "Output ONLY the cleaned reasoning text."
+)
+
+def _build_openai_client():
+    base_url = os.getenv("OPENAI_BASE_URL", None)
+    from openai import OpenAI
+    if base_url:
+        return OpenAI(api_key=os.getenv("OPENAI_API_KEY"), base_url=base_url)
+    return OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+def _build_code_user_prompt(thinking_text: str) -> str:
+    return (
+        f"Original chain-of-thought (between special tags):\n{thinking_text}"
+    )
+
+@retry(
+    reraise=True,
+    stop=stop_after_attempt(3),
+    wait=wait_random_exponential(multiplier=1, max=10),
+    retry=retry_if_exception_type(Exception),
+)
+def _summarize_and_debias_code_once(
+    client,
+    model: str,
+    text: str,
+    max_tokens: int = 10000
+) -> str:
+    resp = client.chat.completions.create(
+        model=model,
+        temperature=0,
+        max_tokens=max_tokens,
+        messages=[
+            {"role": "system", "content": _SUMMARIZE_DEBIAS_CODE_SYSTEM},
+            {"role": "user", "content": _build_code_user_prompt(text)},
+        ],
+    )
+    text = (resp.choices[0].message.content or "").strip()
+    # 简单清理 code fence（以防万一）
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z0-9_+-]*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text).strip()
+    return text
+
+
+def summarize_and_sanitize_reasonings(
+    think_texts: List[str],
+    openai_model: str = "gpt-4o-mini",
+    max_tokens: int = 512,
+    parallel: bool = True,
+) -> List[str]:
+    """
+    用 ChatGPT 对思考文本做摘要 + 去bias。默认串行，想并行可把 parallel=True 并用线程池。
+    """
+    client = _build_openai_client()
+    if not os.getenv("OPENAI_API_KEY"):
+        # 没有 key 就“无操作”返回，以免流程中断
+        raise ValueError("OPENAI_API_KEY not found in .env file")   
+
+    results = []
+    if parallel:
+        import concurrent.futures as cf
+        with cf.ThreadPoolExecutor(max_workers=min(8, len(think_texts))) as ex:
+            futs = [
+                ex.submit(_summarize_and_debias_code_once, client, openai_model, t, max_tokens)
+                for t in think_texts
+            ]
+            for fut in futs:
+                try:
+                    results.append(fut.result() or "")
+                except Exception:
+                    results.append("")
+    else:
+        for t in think_texts:
+            try:
+                results.append(_summarize_and_debias_code_once(client, openai_model, t, max_tokens))
+            except Exception:
+                results.append("")
+    # 兜底：若某些为空，则回退原文
+    cleaned = [r if r.strip() else t for r, t in zip(results, think_texts)]
+    return cleaned
+
+# -----------------------------------------------------------
+# 自由生成思考（到 </think> 截止）——无 budget 循环
+# -----------------------------------------------------------
+def _gen_reasoning_free(
+    llm,
+    prompts,
+    sampling_params,
+    args,
+    start_think_token: str,
+    end_think_token: str,
+    is_qwen3: bool,
+    tokenizer,
+    custom_template: Optional[str],
+) -> List[str]:
+    reason_params = sampling_params.clone()
+    # 建议：给思考阶段一个单独上限（不走 budget，但要止损）
+    reason_params.max_tokens = 2048
+    reason_params.stop = [end_think_token, " " + end_think_token]
+    reason_params.skip_special_tokens = False
+    reason_params.include_stop_str_in_output = True
+
+    if is_qwen3:
+        # render 到 <think> 起点，再用 llm.generate
+        rendered = []
+        for msgs in prompts:
+            s = _apply_template_to_str(tokenizer, msgs, enable_thinking=True, add_generation_prompt=True)
+            if s.rstrip().endswith(start_think_token):
+                s += "\n"
+            rendered.append(s)
+        outs = llm.generate(rendered, sampling_params=reason_params)
+        texts = [o.outputs[0].text for o in outs]
+    else:
+        outs = llm.chat(
+            prompts,
+            sampling_params=reason_params,
+            chat_template=custom_template if custom_template is not None else tokenizer.chat_template,
+            add_generation_prompt=False,         # reasoning 阶段通常不需要再添加 <assistant> 引导
+            continue_final_message=True,         # 让模型继续在最后一条消息上写
+        )
+        texts = [o.outputs[0].text for o in outs]
+
+    # 强制闭合，保证下游流程不崩
+    cleaned = []
+    for t in texts:
+        cleaned.append(_ensure_close_with_phrase(t, end_think_token))
+    return cleaned
+
+
+
+# -----------------------------------------------------------
+# 主流程：RAnA（自由生成 → 摘要去敏 → 拼回作答）
+# -----------------------------------------------------------
 def generate_with_rana(
     llm,
     prompts,
-    data,
-    valid_indices,
     args,
     model_name,
     start_think_token,
     end_think_token,
     sampling_params=None,
 ):
-    """Implement the Reason-Anonymize-Answer (RAnA) approach with a local model.
-
-    This function orchestrates the RAnA pipeline:
-    1. Generate an initial reasoning trace from the model, stopping at `end_think_token`.
-    2. Anonymize the generated reasoning to remove PII.
-    3. Feed the anonymized reasoning back into the model to generate the final answer.
-
-    Parameters
-    ----------
-    llm : vllm.LLM
-        The vLLM object to use for generation.
-    prompts : list
-        A list of prompts for the model.
-    data : list of dict
-        The dataset, where each item corresponds to a prompt and contains user profile data.
-    valid_indices : list of int
-        The indices of the prompts/data to be processed.
-    args : argparse.Namespace
-        Command-line arguments, used for prompt_type and other settings.
-    model_name : str
-        The name of the model being used.
-    start_think_token : str
-        The token to prepend to the reasoning/anonymized reasoning.
-    end_think_token : str
-        The token that signals the end of the reasoning phase.
-    sampling_params : vllm.SamplingParams, optional
-        The sampling parameters for generation.
-
-    Returns
-    -------
-    list of RequestOutputObj
-        A list of final outputs, each containing the combined anonymized reasoning and answer.
     """
-    import time
-    from copy import deepcopy
+    自由生成思考（到 </think> 截止），把思考交给 ChatGPT 做“摘要+去敏”，
+    再把处理后的 think 拼回本地模型继续生成答案。
+    """
+    print("Starting RAnA generation process (free reasoning)")
 
-    print("Starting RAnA generation process")
+    tokenizer = llm.get_tokenizer()
+    is_qwen3 = _is_qwen3_thinker(args)
 
-    # Step 1: Generate reasoning (stop at end_think_token)
-    reasoning_sampling_params = deepcopy(sampling_params)
-    if end_think_token is not None:
-        reasoning_sampling_params.stop = [end_think_token, " " + end_think_token]
-
-    # Set max tokens to max_tokens - 500 for reasoning
-    original_max_tokens = reasoning_sampling_params.max_tokens
-    reasoning_sampling_params.max_tokens = max(original_max_tokens - 500, 1000)
-
-    print(
-        f"Step 1: Generating initial reasoning (max tokens: {reasoning_sampling_params.max_tokens})..."
-    )
-    reasoning_outputs = llm.chat(
-        prompts,
-        sampling_params=reasoning_sampling_params,
-        chat_template=llm.get_tokenizer().chat_template,
-        add_generation_prompt=False if "cot" in args.prompt_type else True,
-        continue_final_message=True if "cot" in args.prompt_type else False,
-    )
-
-    # Step 2: Collect and prepare reasoning for anonymization
-    reasoning_texts = []
-    # Add end_think_token if needed and collect all reasoning texts
-    for i in range(len(reasoning_outputs)):
-        reasoning_text = reasoning_outputs[i].outputs[0].text
-        if (
-            end_think_token is not None
-            and reasoning_text is not None
-            and not reasoning_text.endswith(end_think_token)
-        ):
-            reasoning_text = reasoning_text + end_think_token
-        reasoning_texts.append(reasoning_text)
-
-    # Get a representative profile for anonymization
-    # Using the first valid index's profile as a representative
-    sample_profile = data[valid_indices[0]].get("profile", {})
-
-    # Step 2: Anonymize all reasoning texts in parallel
-    print("Step 2: Anonymizing reasoning in parallel...")
-    anonymized_results = anonymize_reasonings_parallel(reasoning_texts, sample_profile)
-
-    # Store anonymized reasoning and extracted PII in data
-    anonymized_reasoning_list = []
-    for i, idx in enumerate(valid_indices):
-        reasoning_text = reasoning_texts[i]
-        anonymized_text, extracted_pii = anonymized_results[i]
-
-        # Store original and anonymized reasoning in data
-        data[idx]["original_reasoning"] = reasoning_text
-
-        # Store extracted PII data
-        if "gpt_extractions" not in data[idx]:
-            data[idx]["gpt_extractions"] = {}
-        data[idx]["gpt_extractions"]["reasoning"] = extracted_pii
-
-        # Add to anonymized list for next step
-        anonymized_reasoning_list.append(anonymized_text)
-
-    # Step 3: Create new prompts with anonymized reasoning
-    print("Step 3: Generating answers based on anonymized reasoning...")
-    answer_prompts = []
-
-    for i, idx in enumerate(valid_indices):
-        # Create new prompt with a single assistant message containing anonymized reasoning
-        new_prompt = deepcopy(prompts[i])
-        # Add anonymized reasoning as assistant message with Answer prompt
-        if "reasoning" in args.prompt_type:
-            new_prompt.append(
-                {
-                    "role": "assistant",
-                    "content": start_think_token + "\n" + anonymized_reasoning_list[i],
-                }
-            )
-        else:  # Cot
-            new_prompt[1]["content"] += anonymized_reasoning_list[i]
-        answer_prompts.append(new_prompt)
-
-    # Adjust token limit for answer generation to 500
-    answer_sampling_params = deepcopy(sampling_params)
-    answer_sampling_params.max_tokens = 500
-
-    print(f"Generating answers with max_tokens: {answer_sampling_params.max_tokens}")
-
-    # Path to custom chat template
-    # We need this for DeepSeek models, cause otherwise they og template will remove the reasoning
+    # 自定义模板（例如 deepseek 等需要保留思考内容的模板）
     custom_template_path = f"chat_templates/rana/{model_name.replace('/', '_')}.jinja"
-
-    # Load custom chat template
     try:
-        with open(custom_template_path, "r") as f:
+        with open(custom_template_path, "r", encoding="utf-8") as f:
             custom_template = f.read()
+            print(f"Using custom chat template from {custom_template_path}")
     except FileNotFoundError:
-        print(f"Custom template not found for {model_name} at {custom_template_path}")
-        print("Using default chat template")
         custom_template = None
+        print(f"No custom template for {model_name}. Using default tokenizer.chat_template")
 
-    # Generate answers based on anonymized reasoning
-    answer_outputs = llm.chat(
-        answer_prompts,
-        sampling_params=answer_sampling_params,
-        chat_template=custom_template
-        if custom_template is not None
-        else llm.get_tokenizer().chat_template,
-        add_generation_prompt=False,
-        continue_final_message=True,
+    # ---- Step 1: 自由生成“思考”到 </think> ----
+    final_reasonings = _gen_reasoning_free(
+        llm=llm,
+        prompts=prompts,
+        sampling_params=sampling_params,
+        args=args,
+        start_think_token=start_think_token,
+        end_think_token=end_think_token,
+        is_qwen3=is_qwen3,
+        tokenizer=tokenizer,
+        custom_template=custom_template,
     )
 
-    # Step 4: Combine reasoning and answers
-    print("Step 4: Combining reasoning and answers...")
-    final_outputs = []
+    # （可选）把 </think> 去掉再送给 OpenAI（一般去掉更干净）
+    stripped_reasonings = [r.replace(end_think_token, "").strip() for r in final_reasonings]
 
-    for i, idx in enumerate(valid_indices):
-        answer_text = answer_outputs[i].outputs[0].text
-        combined_text = anonymized_reasoning_list[i] + answer_text
+    # -------------------------------------------------------
+    # Step B: 用 ChatGPT 做“摘要 + 去敏/去偏”
+    #   - 如未设置 OPENAI_API_KEY，则回退原文
+    #   - 这里无 profile 时传 None
+    # -------------------------------------------------------
+    openai_model = getattr(args, "openai_model", "gpt-4o-mini")
+    openai_max_tokens = getattr(args, "openai_max_tokens", 10000)
+    cleaned_reasonings = summarize_and_sanitize_reasonings(
+        think_texts=stripped_reasonings,
+        openai_model=openai_model,
+        max_tokens=openai_max_tokens,
+        parallel=True,
+    )
 
-        # Create output object mimicking the regular output format
-        output_obj = OutputObj(combined_text)
-        request_output = RequestOutputObj([output_obj], prompts[i])
-        final_outputs.append(request_output)
+    # 确保闭合：给清洗后的文本补上 </think>（规范闭合，避免模板截断）
+    closed_reasonings = [_ensure_close_with_phrase(cr, end_think_token) for cr in cleaned_reasonings]
 
-    return final_outputs
+    # -------------------------------------------------------
+    # Step C: 把清洗后的思考拼回 prompt，让本地模型生成“最终答案”
+    #   - Qwen3：渲染到 <think> 起点 → 拼接 cleaned + </think> → llm.generate
+    #   - 非 Qwen：直接在 messages 里 append assistant 一条包含 cleaned + </think> → llm.chat
+    # -------------------------------------------------------
+    answer_params = sampling_params.clone() if sampling_params is not None else None
+    if answer_params is None:
+        from vllm import SamplingParams
+        answer_params = SamplingParams()
+    answer_params.max_tokens = args.max_tokens - 2048
+    # 答案阶段通常不要再 stop 掐 </think>；只在 reasoning 阶段使用 stop
+    answer_params.stop = None
+    answer_params.include_stop_str_in_output = False
+    answer_params.skip_special_tokens = True
+
+    outputs = []
+
+    if is_qwen3:
+        # ---- Qwen3：render 到 <think> 起点，再拼 cleaned + </think> ----
+        rendered_with_reason = []
+        for i, msgs in enumerate(prompts):
+            s = _apply_template_to_str(tokenizer, msgs, enable_thinking=True, add_generation_prompt=True)
+            # 如果刚好以 <think> 结尾，补个换行更自然
+            if s.rstrip().endswith(start_think_token):
+                s += "\n"
+            # 拼回清洗后的 reasoning，并强制闭合
+            s += closed_reasonings[i]
+            rendered_with_reason.append(s)
+
+        ans_outs = llm.generate(rendered_with_reason, sampling_params=answer_params)
+
+        for i, ans in enumerate(ans_outs):
+            answer_text = ans.outputs[0].text
+            # 防止答案里多余地再复述 </think>
+            if answer_text.startswith(end_think_token):
+                answer_text = answer_text[len(end_think_token):]
+            if answer_text.endswith(end_think_token):
+                answer_text = answer_text[: -len(end_think_token)]
+            ans.outputs[0].text = closed_reasonings[i] + answer_text
+            ans.prompt = stripped_reasonings[i]
+            outputs.append(ans)
+
+    else:
+        # ---- 非 Qwen：直接在对话最后追加“assistant: <think>... </think>” ----
+        answer_prompts = []
+        for i, msgs in enumerate(prompts):
+            new_msgs = deepcopy(msgs)
+            new_msgs[-1]["content"] += closed_reasonings[i]
+            
+            answer_prompts.append(new_msgs)
+
+        ans_outs = llm.chat(
+            answer_prompts,
+            sampling_params=answer_params,
+            chat_template=custom_template if custom_template is not None else tokenizer.chat_template,
+            add_generation_prompt=False,
+            continue_final_message=True,      # 继续在 assistant 的最后一条消息后写“答案”
+        )
+
+        for i, ans in enumerate(ans_outs):
+            answer_text = ans.outputs[0].text
+            if answer_text.startswith(end_think_token):
+                answer_text = answer_text[len(end_think_token):]
+            if answer_text.endswith(end_think_token):
+                answer_text = answer_text[: -len(end_think_token)]
+            combined = closed_reasonings[i] + answer_text
+
+            output_obj = OutputObj(combined)
+            request_output = RequestOutputObj([output_obj], prompts[i])
+            outputs.append(request_output)
+
+    return outputs
 
 
 def generate_with_openrouter_rana(

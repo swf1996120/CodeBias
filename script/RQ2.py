@@ -4,12 +4,12 @@ import subprocess
 import time
 
 MODEL_PROVIDER = {
-    "meta-llama/Llama-3.1-8B-Instruct": "vllm",
-    "Qwen/Qwen2.5-Coder-7B-Instruct": "vllm",
-    "Qwen/Qwen3-8B": "vllm",
+    "/home/tangxinran/QueryAttack/models/Llama-3.1-8B-Instruct": "vllm",
+    "/home/tangxinran/QueryAttack/models/Qwen2.5-Coder-7B-Instruct": "vllm",
+    "/home/tangxinran/QueryAttack/models/Qwen3-8B": "vllm",
     "/home/tangxinran/QueryAttack/models/Llama2-13B": "vllm",
     "/home/tangxinran/.cache/huggingface/hub/models--deepseek-ai--DeepSeek-R1-Distill-Llama-8B/snapshots/6a6f4aa4197940add57724a7707d069478df56b1": "vllm",
-    "Qwen/Qwen3-14B": "vllm",
+    "/home/tangxinran/QueryAttack/models/Qwen3-14B": "vllm",
     "/home/tangxinran/QueryAttack/models/qwen3-32B": "vllm",
     "/home/tangxinran/QueryAttack/models/deepseek-coder-7b-instruct-v1.5": "vllm",
     "/home/tangxinran/QueryAttack/models/CodeLlama-7b-Instruct-hf": "vllm",
@@ -22,14 +22,14 @@ MAX_RETRIES = 10  # 最多重试次数
 REASONING_LENGTHS = [64, 128, 256, 512, 1024, 2048]
 
 def run_reasoning_length_experiment():
-    SCENARIORS = ["func_job", "multi_med"]
+    SCENARIORS = ["func_edu", "func_job", "multi_med"]
     MODEL = [
-    "meta-llama/Llama-3.1-8B-Instruct",
-    "Qwen/Qwen2.5-Coder-7B-Instruct",
-    "Qwen/Qwen3-8B",
+    "/home/tangxinran/QueryAttack/models/Llama-3.1-8B-Instruct",
+    "/home/tangxinran/QueryAttack/models/Qwen2.5-Coder-7B-Instruct",
+    "/home/tangxinran/QueryAttack/models/Qwen3-8B",
     # "/home/tangxinran/QueryAttack/models/Llama2-13B",
     # "/home/tangxinran/.cache/huggingface/hub/models--deepseek-ai--DeepSeek-R1-Distill-Llama-8B/snapshots/6a6f4aa4197940add57724a7707d069478df56b1",
-    # "Qwen/Qwen3-14B",
+    # "/home/tangxinran/QueryAttack/models/Qwen3-14B",
     # "/home/tangxinran/QueryAttack/models/qwen3-32B",
     # "/home/tangxinran/QueryAttack/models/deepseek-coder-7b-instruct-v1.5",
     # "/home/tangxinran/QueryAttack/models/CodeLlama-7b-Instruct-hf",

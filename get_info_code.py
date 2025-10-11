@@ -696,7 +696,7 @@ if __name__ == "__main__":
  
     #RQ2
 
-    evaluation_models = ["6a6f4aa4197940add57724a7707d069478df56b1", "Llama2-13B", "qwen3-32B", "deepseek-coder-7b-instruct-v1.5"]
+    evaluation_models = ["CodeLlama-7b-Instruct-hf", "deepseek-coder-7b-instruct-v1.5", "Qwen3-14B"]
     prompt = ["cot"]
     budge_limitations = [64, 128, 256, 512, 1024, 2048]
     Strategy = "BASE"

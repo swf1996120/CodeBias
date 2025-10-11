@@ -1414,6 +1414,10 @@ def _is_qwen3_thinker(args) -> bool:
     """仅用模型名判断是否走 Qwen3 思考分支。"""
     name = (getattr(args, "model", "") or "").lower()
     return "qwen3" in name
+def _is_deepseek_r1_thinker(args) -> bool:
+    """仅用模型名判断是否走 DeepSeek R1 思考分支。"""
+    name = (getattr(args, "model", "") or "").lower()
+    return "deepseek-r1" in name
 
 def _apply_template_to_str(tokenizer, messages, enable_thinking: bool = True, add_generation_prompt: bool = True) -> str:
     return tokenizer.apply_chat_template(
@@ -1656,6 +1660,7 @@ def generate_with_budget(
 ):
     tokenizer = llm.get_tokenizer()
     is_qwen3 = _is_qwen3_thinker(args)
+    is_deep_r1 = _is_deepseek_r1_thinker(args)
     IGNORE_STRS = ["Oh wait", "Wait", "But wait,"]  # 用于提前闭合后继续写
 
     # 选模板
@@ -1671,7 +1676,7 @@ def generate_with_budget(
     N = len(prompts)
 
     # -------------------------- Qwen3 分支 --------------------------
-    if is_qwen3:
+    if is_qwen3 or is_deep_r1:
         # 初始化：渲染到 <think> 起点
         raw_prompt_strs = []
         for messages in prompts:

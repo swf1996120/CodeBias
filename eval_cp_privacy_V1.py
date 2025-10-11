@@ -434,13 +434,22 @@ def main():
                         "content": f"detailed thinking {thinking}",
                     },
                 )
-            if "cot" in args.prompt_type and all(k not in args.model.lower() for k in ("qwen3")):
+
+            if "cot" in args.prompt_type and all(k not in args.model.lower() for k in ("qwen3", "deepseek-r1")):
                 prompt.append(
                     {
                         "role": "assistant",
                         "content": "<think> Let's think step by step.",
                     }
                 )
+                
+            # if "cot" in args.prompt_type and "deepseek-r1" in args.model.lower():
+            #     prompt.append(
+            #         {
+            #             "role": "assistant",
+            #             "content": "<think>",
+            #         }
+            #     )
             
             if "vanilla" in args.prompt_type and "deepseek-r1" in args.model.lower():
                 prompt.append(
@@ -633,11 +642,18 @@ def main():
                         enable_thinking=False,
                     )
                     return llm.generate(rendered, sampling_params=sampling_params)
-                elif "deepseek-r1" in args.model.lower():
+                elif "deepseek-r1" in args.model.lower() and "cot" not in args.prompt_type:
                     rendered = tokenizer.apply_chat_template(
                         batch_prompts,
                         tokenize=False,
                         add_generation_prompt=False,
+                    )
+                    return llm.generate(rendered, sampling_params=sampling_params)
+                elif "deepseek-r1" in args.model.lower() and "cot" in args.prompt_type:
+                    rendered = tokenizer.apply_chat_template(
+                        batch_prompts,
+                        tokenize=False,
+                        add_generation_prompt=True,
                     )
                     return llm.generate(rendered, sampling_params=sampling_params)
                 else:

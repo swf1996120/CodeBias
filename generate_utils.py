@@ -1675,7 +1675,7 @@ def generate_with_budget(
     base_params = sampling_params.clone()
     N = len(prompts)
 
-    # -------------------------- Qwen3 分支 --------------------------
+    # -------------------------- Qwen3  and DeepSeek R1分支 --------------------------
     if is_qwen3 or is_deep_r1:
         # 初始化：渲染到 <think> 起点
         raw_prompt_strs = []

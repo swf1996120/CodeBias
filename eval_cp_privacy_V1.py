@@ -320,7 +320,7 @@ def main():
     # Make sure the output directory exists
     
     if args.sample:
-        args.output_file = f"results/SAMPLING/{args.model.split('/')[-1]}_{args.prompt_type}_{args.budget_thinking if args.budget_thinking else 'Any'}/{args.scenarior}/{args.category}/{args.attribute}/result.json"
+        args.output_file = f"results/SAMPLING/{args.model.split('/')[-1]}_{args.prompt_type}_{args.temperature}/{args.scenarior}/{args.category}/{args.attribute}/result.json"
     
     elif args.rana:
         args.output_file = f"results/RAnA/{args.model.split('/')[-1]}_{args.prompt_type}_{args.budget_thinking if args.budget_thinking else 'Any'}/{args.scenarior}/{args.category}/{args.attribute}/result.json"

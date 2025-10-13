@@ -6,9 +6,16 @@ from itertools import product
 
 # 简化的 model -> provider 映射；若不在此表中默认使用 vllm
 MODEL_PROVIDER = {
-    "meta-llama/Llama-3.1-8B-Instruct": "vllm",
-    "Qwen/Qwen2.5-Coder-7B-Instruct": "vllm",
-    "Qwen/Qwen3-8B": "vllm",
+    "/home/tangxinran/QueryAttack/models/Llama-3.1-8B-Instruct": "vllm",
+    "/home/tangxinran/QueryAttack/models/Qwen2.5-Coder-7B-Instruct": "vllm",
+    "/home/tangxinran/QueryAttack/models/Qwen3-8B": "vllm",
+    "/home/tangxinran/QueryAttack/models/Llama2-13B": "vllm",
+    "/home/tangxinran/.cache/huggingface/hub/models--deepseek-ai--DeepSeek-R1-Distill-Llama-8B/snapshots/6a6f4aa4197940add57724a7707d069478df56b1": "vllm",
+    "/home/tangxinran/QueryAttack/models/Qwen3-14B": "vllm",
+    "/home/tangxinran/QueryAttack/models/qwen3-32B": "vllm",
+    "/home/tangxinran/QueryAttack/models/deepseek-coder-7b-instruct-v1.5": "vllm",
+    "/home/tangxinran/QueryAttack/models/CodeLlama-7b-Instruct-hf": "vllm",
+    "/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B": "vllm"
 }
 
 PY_SCRIPT = "eval_cp_privacy_V1.py"
@@ -39,9 +46,9 @@ def run_sampling_experiment():
 
     # 只列出典型要跑的模型（可按需扩展）
     MODELS = [
-        "meta-llama/Llama-3.1-8B-Instruct",
-        "Qwen/Qwen2.5-Coder-7B-Instruct",
-        "Qwen/Qwen3-8B",
+    "/home/tangxinran/QueryAttack/models/Llama-3.1-8B-Instruct",
+    "/home/tangxinran/QueryAttack/models/Qwen3-8B",
+    "/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B"
     ]
 
     PROMPT_TYPES = ["cot"]

@@ -33,7 +33,7 @@ def run_reasoning_length_experiment():
     # "/home/tangxinran/QueryAttack/models/qwen3-32B",
     # "/home/tangxinran/QueryAttack/models/deepseek-coder-7b-instruct-v1.5",
     # "/home/tangxinran/QueryAttack/models/CodeLlama-7b-Instruct-hf",
-    "/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B"
+    # "/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B"
     ]
     PROMPT_TYPES = ["cot"]
     for model in MODEL:

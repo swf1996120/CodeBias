@@ -450,14 +450,14 @@ def main():
             #             "content": "<think>",
             #         }
             #     )
-            
-            if "vanilla" in args.prompt_type and "deepseek-r1" in args.model.lower():
-                prompt.append(
-                    {
-                        "role": "assistant",
-                        "content": "<think>I think I have finished thinking.</think>",
-                    }
-                )
+                
+            # if "vanilla" in args.prompt_type and "deepseek-r1" in args.model.lower():
+            #     prompt.append(
+            #         {
+            #             "role": "assistant",
+            #             "content": "<think>I think I have finished thinking.",
+            #         }
+            #     )
 
             # Check if the model is designated as API-only
             is_api_only_model = args.model.lower() in API_ONLY_MODELS
@@ -646,8 +646,9 @@ def main():
                     rendered = tokenizer.apply_chat_template(
                         batch_prompts,
                         tokenize=False,
-                        add_generation_prompt=False,
+                        add_generation_prompt=True,
                     )
+                    rendered = [r + "I think I have finished thinking.\n</think>\n\n" for r in rendered]
                     return llm.generate(rendered, sampling_params=sampling_params)
                 elif "deepseek-r1" in args.model.lower() and "cot" in args.prompt_type:
                     rendered = tokenizer.apply_chat_template(

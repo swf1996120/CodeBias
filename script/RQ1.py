@@ -133,8 +133,8 @@ def run_function_evaluation_vllm(scenarior=None, category=None, attribute=None):
 
 if __name__ == "__main__":
     # 用法1：全量遍历
-    MODEL = ["/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B"]
+    MODEL = ["/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B", "/home/tangxinran/.cache/huggingface/hub/models--deepseek-ai--DeepSeek-R1-Distill-Llama-8B/snapshots/6a6f4aa4197940add57724a7707d069478df56b1"]
     PROMPT_TYPES = ["vanilla", "cot"]
-    run_function_evaluation_vllm(scenarior="func_job", category="gender", attribute="male")
+    run_function_evaluation_vllm()
     # 用法2：只运行指定路径
     # run_function_evaluation(scenarior="func_edu", category="gender", attribute="male"2)

@@ -10,11 +10,11 @@ MODEL_PROVIDER = {
   "Qwen/Qwen3-8B": "vllm",
   "/home/tangxinran/QueryAttack/models/Llama2-13B": "vllm",
   "/home/tangxinran/.cache/huggingface/hub/models--deepseek-ai--DeepSeek-R1-Distill-Llama-8B/snapshots/6a6f4aa4197940add57724a7707d069478df56b1": "vllm",
-  "Qwen/Qwen3-14B": "vllm",
-  "/home/tangxinran/QueryAttack/models/qwen3-32B": "vllm",
-  "/home/tangxinran/QueryAttack/models/deepseek-coder-7b-instruct-v1.5": "vllm",
-  "/home/tangxinran/QueryAttack/models/CodeLlama-7b-Instruct-hf": "vllm",
-  "/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B": "vllm"
+#   "Qwen/Qwen3-14B": "vllm",
+#   "/home/tangxinran/QueryAttack/models/qwen3-32B": "vllm",
+#   "/home/tangxinran/QueryAttack/models/deepseek-coder-7b-instruct-v1.5": "vllm",
+#   "/home/tangxinran/QueryAttack/models/CodeLlama-7b-Instruct-hf": "vllm",
+#   "/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B": "vllm"
 }
 PY_SCRIPT = "eval_cp_privacy_V1.py"
 

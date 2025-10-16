@@ -46,7 +46,7 @@ def run_sampling_experiment():
 
     # 只列出典型要跑的模型（可按需扩展）
     MODELS = [
-    "/home/tangxinran/QueryAttack/models/Llama-3.1-8B-Instruct",
+    # "/home/tangxinran/QueryAttack/models/Llama-3.1-8B-Instruct",
     "/home/tangxinran/QueryAttack/models/Qwen3-8B",
     "/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B"
     ]

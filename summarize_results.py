@@ -219,7 +219,7 @@ def main():
     evaluation_models = [
                         "Llama-3.1-8B-Instruct",
                         #  "Qwen2.5-Coder-7B-Instruct",
-                         "Qwen3-8B",
+                        #  "Qwen3-8B",
                         #  "Llama2-13B",
                         #  "6a6f4aa4197940add57724a7707d069478df56b1",
                         #  "Qwen3-14B",
@@ -229,13 +229,11 @@ def main():
                         #  "DeepSeek-R1-Distill-Qwen-7B"
                         ]
     prompt = ["cot"]
-    temps = [0.0, 0.2, 0.6, 1.0]
-    Strategy = "SAMPLING"
+    Strategy = "RAnA"
     model_dirs_args = []
     for evaluation_model in evaluation_models:
         for prompt_type in prompt:
-            for temp in temps:
-                model_dirs_args.append(f"results/{Strategy}/{evaluation_model}_{prompt_type}_{temp}")
+            model_dirs_args.append(f"results/{Strategy}/{evaluation_model}_{prompt_type}_Any")
 
     # 解析/存在性检查，并记录模型显示名（文件夹名）
     model_dirs: List[Path] = []

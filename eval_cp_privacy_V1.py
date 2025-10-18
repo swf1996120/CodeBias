@@ -7,8 +7,11 @@ os.environ["NCCL_P2P_DISABLE"] = "1"
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
-os.environ["HF_TOKEN"] = "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"
-
+# os.environ["HF_TOKEN"] = "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"
+# os.environ["OPENAI_API_KEY"] = "sk-4bW0xw8CIIsWQpnnB3vwMx3egN4lhPWW2lVwJnKJlg9IICVQ"
+# os.environ["OPENAI_BASE_URL"] = "https://yunwu.ai/v1"
+os.environ["OPENAI_BASE_URL"] = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+os.environ["OPENAI_API_KEY"] = "sk-e346078d76f546c2ab04f0f008126a91"
 
 
 import argparse
@@ -162,7 +165,7 @@ def parse_args():
     parser.add_argument(
         "--gpt_eval_model",
         type=str,
-        default="gpt-4o-mini",
+        default="qwen3-max",
         help="GPT model to use for LLM-as-a-judge evaluation",
     )
     parser.add_argument(

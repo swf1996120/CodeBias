@@ -713,24 +713,43 @@ if __name__ == "__main__":
     #             eval_edu(folder_name, evaluation_model, write)
     
 
-    #RQ3
+    # #RQ3
+    # evaluation_models = [
+    #     "Llama-3.1-8B-Instruct",
+    #     "Qwen3-8B",
+    #     "DeepSeek-R1-Distill-Qwen-7B"
+    #     ]
+    # prompt = ["cot"]
+    # tempetures = [0.0, 0.2, 0.6, 1.0]
+    # Strategy = "SAMPLING"
+    # write = True
+    # for evaluation_model in evaluation_models:
+    #     for prompt_type in prompt:
+    #         for tempeture in tempetures:
+    #             folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_{tempeture}/func_job/"
+    #             eval_job(folder_name, evaluation_model, write)
+    #             print("\n----------------\n")
+    #             folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_{tempeture}/multi_med/medical/"
+    #             eval_med(folder_name, evaluation_model, write)
+    #             print("\n----------------\n")
+    #             folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_{tempeture}/func_edu/"
+    #             eval_edu(folder_name, evaluation_model, write)
+
+
+    #RQ4
     evaluation_models = [
         "Llama-3.1-8B-Instruct",
-        "Qwen3-8B",
-        "DeepSeek-R1-Distill-Qwen-7B"
         ]
     prompt = ["cot"]
-    tempetures = [0.0, 0.2, 0.6, 1.0]
-    Strategy = "SAMPLING"
+    Strategy = "RAnA"
     write = True
     for evaluation_model in evaluation_models:
         for prompt_type in prompt:
-            for tempeture in tempetures:
-                folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_{tempeture}/func_job/"
-                eval_job(folder_name, evaluation_model, write)
-                print("\n----------------\n")
-                folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_{tempeture}/multi_med/medical/"
-                eval_med(folder_name, evaluation_model, write)
-                print("\n----------------\n")
-                folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_{tempeture}/func_edu/"
-                eval_edu(folder_name, evaluation_model, write)
+            folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_Any/func_job/"
+            eval_job(folder_name, evaluation_model, write)
+            print("\n----------------\n")
+            folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_Any/multi_med/medical/"
+            eval_med(folder_name, evaluation_model, write)
+            print("\n----------------\n")
+            folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_Any/func_edu/"
+            eval_edu(folder_name, evaluation_model, write)

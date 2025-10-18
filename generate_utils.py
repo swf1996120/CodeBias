@@ -470,15 +470,24 @@ def display_generation_config(console, sampling_params):
     return gen_conf
 
 
-_SUMMARIZE_DEBIAS_CODE_SYSTEM = (
-    "You analyze text about code, programming.\n"
-    "Perform two steps on the INPUT TEXT:\n"
-    "Step 1 (Summarize): Summarize the given chain-of-thought into a short, information-dense reasoning"
-    "(purpose, behavior, inputs/outputs, APIs, constraints). No speculation.\n"
-    "Step 2 (Debias): Remove potentially biased/subjective/opinionated language"
-    "objective and verifiable statements about the code.\n"
-    "Output ONLY the cleaned reasoning text."
-)
+_SUMMARIZE_DEBIAS_CODE_SYSTEM = """
+##Definition:
+"Social Bias of LLMs in Code Generation" refers to the phenomenon where large language models (LLMs), when generating code, intentionally or unintentionally exhibit unfair or discriminatory tendencies in contexts involving social attributes such as gender, age, race, occupation, or social roles.
+
+##Your goal:
+You analyze text about code or programming. 
+Delete any sentence or phrase that exhibits unfair or discriminatory tendencies toward social attributes from the given text, regarding given the task. 
+Keep all other technical, neutral, or factual content unchanged.
+
+## Instrcutions:
+Perform two steps on the INPUT TEXT:
+    Step 1 (Summarize): Summarize the given chain-of-thought into the concise, information-dense reasoning
+(purpose, behavior, inputs/outputs, APIs, constraints) descriptions. Keep the key information as much as possible. **DON NOT speculation** and *DON NOT add your own thoughts*.
+
+    Step 2 (Debias): For the summarized reasoning descriptions, Remove potentially biased/subjective/opinionated language objective and verifiable statements about the code.
+    
+## Important: Output ONLY the cleaned reasoning text.
+"""
 
 def _build_openai_client():
     base_url = os.getenv("OPENAI_BASE_URL", None)
@@ -568,7 +577,7 @@ def _gen_reasoning_free(
     args,
     start_think_token: str,
     end_think_token: str,
-    is_qwen3: bool,
+    is_qwen3_or_r1: bool,
     tokenizer,
     custom_template: Optional[str],
 ) -> List[str]:
@@ -579,7 +588,7 @@ def _gen_reasoning_free(
     reason_params.skip_special_tokens = False
     reason_params.include_stop_str_in_output = True
 
-    if is_qwen3:
+    if is_qwen3_or_r1:
         # render 到 <think> 起点，再用 llm.generate
         rendered = []
         for msgs in prompts:
@@ -627,6 +636,7 @@ def generate_with_rana(
 
     tokenizer = llm.get_tokenizer()
     is_qwen3 = _is_qwen3_thinker(args)
+    is_deep_r1 = _is_deepseek_r1_thinker(args)
 
     # 自定义模板（例如 deepseek 等需要保留思考内容的模板）
     custom_template_path = f"chat_templates/rana/{model_name.replace('/', '_')}.jinja"
@@ -646,7 +656,7 @@ def generate_with_rana(
         args=args,
         start_think_token=start_think_token,
         end_think_token=end_think_token,
-        is_qwen3=is_qwen3,
+        is_qwen3_or_r1=is_qwen3 or is_deep_r1,
         tokenizer=tokenizer,
         custom_template=custom_template,
     )
@@ -659,7 +669,7 @@ def generate_with_rana(
     #   - 如未设置 OPENAI_API_KEY，则回退原文
     #   - 这里无 profile 时传 None
     # -------------------------------------------------------
-    openai_model = getattr(args, "openai_model", "gpt-4o-mini")
+    openai_model = getattr(args, "gpt_eval_model", "")
     openai_max_tokens = getattr(args, "openai_max_tokens", 10000)
     cleaned_reasonings = summarize_and_sanitize_reasonings(
         think_texts=stripped_reasonings,
@@ -688,7 +698,7 @@ def generate_with_rana(
 
     outputs = []
 
-    if is_qwen3:
+    if is_qwen3 or is_deep_r1:
         # ---- Qwen3：render 到 <think> 起点，再拼 cleaned + </think> ----
         rendered_with_reason = []
         for i, msgs in enumerate(prompts):
@@ -710,7 +720,7 @@ def generate_with_rana(
             if answer_text.endswith(end_think_token):
                 answer_text = answer_text[: -len(end_think_token)]
             ans.outputs[0].text = closed_reasonings[i] + answer_text
-            ans.prompt = stripped_reasonings[i]
+            ans.prompt = final_reasonings[i]
             outputs.append(ans)
 
     else:
@@ -736,11 +746,9 @@ def generate_with_rana(
                 answer_text = answer_text[len(end_think_token):]
             if answer_text.endswith(end_think_token):
                 answer_text = answer_text[: -len(end_think_token)]
-            combined = closed_reasonings[i] + answer_text
-
-            output_obj = OutputObj(combined)
-            request_output = RequestOutputObj([output_obj], prompts[i])
-            outputs.append(request_output)
+            ans.outputs[0].text = closed_reasonings[i] + answer_text
+            ans.prompt = final_reasonings[i]
+            outputs.append(ans)
 
     return outputs
 

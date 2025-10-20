@@ -694,10 +694,10 @@ if __name__ == "__main__":
     #         folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_{budge_limitation}/func_edu/"
     #         eval_edu(folder_name, evaluation_model, write)
  
-    #RQ2
-    # evaluation_models = ["DeepSeek-R1-Distill-Qwen-7B", "Llama-3.1-8B-Instruct"]
+    # # RQ2
+    # evaluation_models = ["Qwen3-8B"]
     # prompt = ["cot"]
-    # budge_limitations = [64, 128, 256, 512, 1024, 2048]
+    # budge_limitations = [2048]
     # Strategy = "BASE"
     # write = True
     # for evaluation_model in evaluation_models:
@@ -711,6 +711,8 @@ if __name__ == "__main__":
     #             print("\n----------------\n")
     #             folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_{budge_limitation}/func_edu/"
     #             eval_edu(folder_name, evaluation_model, write)
+    
+
     
 
     # #RQ3
@@ -738,7 +740,15 @@ if __name__ == "__main__":
 
     #RQ4
     evaluation_models = [
-        "Llama-3.1-8B-Instruct",
+        # "Llama-3.1-8B-Instruct",
+        "Qwen2.5-Coder-7B-Instruct",
+        "Qwen3-8B",
+        "Llama2-13B",
+        "6a6f4aa4197940add57724a7707d069478df56b1",
+        "Qwen3-14B",
+        "qwen3-32B",
+        "deepseek-coder-7b-instruct-v1.5",
+        # "CodeLlama-7b-Instruct-hf",
         ]
     prompt = ["cot"]
     Strategy = "RAnA"

@@ -28,7 +28,8 @@ def generate_sampling_configs():
     返回值为 dict 列表，每个 dict 表示一组参数及其短名（用于日志/文件夹）。
     """
     # 仅比较 temperature；其他参数保持 eval 脚本默认值
-    temps = [0.0, 0.2, 0.6, 1.0]
+    # temps = [0.0, 0.2, 0.6, 1.0]
+    temps = [0.4, 0.8]
 
     configs = []
     for t in temps:
@@ -46,9 +47,9 @@ def run_sampling_experiment():
 
     # 只列出典型要跑的模型（可按需扩展）
     MODELS = [
-    # "/home/tangxinran/QueryAttack/models/Llama-3.1-8B-Instruct",
+    "/home/tangxinran/QueryAttack/models/Llama-3.1-8B-Instruct",
     "/home/tangxinran/QueryAttack/models/Qwen3-8B",
-    "/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B"
+    # "/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B"
     ]
 
     PROMPT_TYPES = ["cot"]

@@ -217,7 +217,7 @@ def main():
 
     out_xlsx = "all_models_summary.xlsx"
     evaluation_models = [
-                        # "Llama-3.1-8B-Instruct",
+                        "Llama-3.1-8B-Instruct",
                         #  "Qwen2.5-Coder-7B-Instruct",
                          "Qwen3-8B",
                         #  "Llama2-13B",
@@ -229,13 +229,15 @@ def main():
                         #  "DeepSeek-R1-Distill-Qwen-7B"
                         ]
     prompt = ["cot"]
-    Strategy = "BASE"
-    budge_limitations = [64, 128, 256, 512, 1024, 2048]
+    Strategy = "SAMPLING"
+    # budge_limitations = [64, 128, 256, 512, 1024, 2048]
+    tempetures = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
     model_dirs_args = []
     for evaluation_model in evaluation_models:
         for prompt_type in prompt:
-            for budge_limitation in budge_limitations:
-                model_dirs_args.append(f"results/{Strategy}/{evaluation_model}_{prompt_type}_{budge_limitation}")
+            for tempeture in tempetures:
+            # for budge_limitation in budge_limitations:
+                model_dirs_args.append(f"results/{Strategy}/{evaluation_model}_{prompt_type}_{tempeture}")
 
     # 解析/存在性检查，并记录模型显示名（文件夹名）
     model_dirs: List[Path] = []

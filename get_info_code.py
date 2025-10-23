@@ -719,10 +719,11 @@ if __name__ == "__main__":
     # evaluation_models = [
     #     "Llama-3.1-8B-Instruct",
     #     "Qwen3-8B",
-    #     "DeepSeek-R1-Distill-Qwen-7B"
+    #     # "DeepSeek-R1-Distill-Qwen-7B"
     #     ]
     # prompt = ["cot"]
-    # tempetures = [0.0, 0.2, 0.6, 1.0]
+    # # tempetures = [0.0, 0.2, 0.6, 1.0]
+    # tempetures = [0.4, 0.8]
     # Strategy = "SAMPLING"
     # write = True
     # for evaluation_model in evaluation_models:
@@ -741,14 +742,15 @@ if __name__ == "__main__":
     #RQ4
     evaluation_models = [
         # "Llama-3.1-8B-Instruct",
-        "Qwen2.5-Coder-7B-Instruct",
-        "Qwen3-8B",
-        "Llama2-13B",
-        "6a6f4aa4197940add57724a7707d069478df56b1",
-        "Qwen3-14B",
-        "qwen3-32B",
-        "deepseek-coder-7b-instruct-v1.5",
-        # "CodeLlama-7b-Instruct-hf",
+        # "Qwen2.5-Coder-7B-Instruct",
+        # "Qwen3-8B",
+        # "Llama2-13B",
+        # "6a6f4aa4197940add57724a7707d069478df56b1",
+        # "Qwen3-14B",
+        # "qwen3-32B",
+        # "deepseek-coder-7b-instruct-v1.5",
+        "CodeLlama-7b-Instruct-hf",
+        # "DeepSeek-R1-Distill-Qwen-7B",
         ]
     prompt = ["cot"]
     Strategy = "RAnA"

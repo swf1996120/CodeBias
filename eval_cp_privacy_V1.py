@@ -351,7 +351,7 @@ def main():
     # Make sure the output directory exists
     if args.attack:
         assert args.attack_budge is not None
-        args.output_file = f"results/ATTACK/{args.model.split('/')[-1]}_{args.prompt_type}_/{args.scenarior}/{args.category}/{args.attribute}_result.json"
+        args.output_file = f"results/ATTACK/{args.model.split('/')[-1]}_{args.prompt_type}_{args.attack_budge}/{args.scenarior}/{args.category}/{args.attribute}_result.json"
         attack_information = get_attack_information(args.scenarior,args.category,args.attribute)
     elif args.sample:
         args.output_file = f"results/SAMPLING/{args.model.split('/')[-1]}_{args.prompt_type}_{args.temperature}/{args.scenarior}/{args.category}/{args.attribute}_result.json"

@@ -1665,37 +1665,31 @@ def _ensure_close_with_phrase(s: str, end_think_token: str) -> str:
 import random
 from copy import deepcopy
 
+
 def generate_attack_with_budget(
     llm, prompts, sampling_params, args, start_think_token: str, end_think_token: str, attack_information
 ):
     """
-    正确流程（按用户要求）：
-      1) 先用 args.attack_budge 生成思考； 
-      2) 若已闭合，在 </think> 前插入 attack_information；
-         若未闭合，把 attack_information 追加到思考末尾后，解除预算继续生成直到闭合；
-      3) 基于最终 CoT 生成答案。
-
-    依赖外部工具：
-      - _is_qwen3_thinker, _is_deepseek_r1_thinker
-      - _apply_template_to_str (渲染字符串模板, enable_thinking=True)
-      - _ensure_close_with_phrase (保证闭合 </think>)
+    目标流程：
+      1) 先用 args.attack_budge 生成“思考”；
+      2) 不管是否闭合，都先对注入（插入/追加）的文本做 paraphrase；
+      3) 若未闭合：在 paraphrase 之后放开预算继续生成直至闭合；
+      4) 基于“完整 CoT”再生成答案。
     """
+
+    # ---------- OpenAI 释义工具 ----------
     @retry(
-    reraise=True,
-    stop=stop_after_attempt(3),
-    wait=wait_random_exponential(multiplier=1, max=10),
-    retry=retry_if_exception_type(Exception),
+        reraise=True,
+        stop=stop_after_attempt(3),
+        wait=wait_random_exponential(multiplier=1, max=10),
+        retry=retry_if_exception_type(Exception),
     )
     def paraphrase_attack_info(client, attack_text: str, model: str = "gpt-4.1-mini") -> str:
-        """
-        只做释义：不改变原意、不新增事实、不删减重要条件。
-        """
-        system_prompt = f"""You are a careful rewriter. Rephrase the following text, without changing meaning, tone or implied conditions.
-            Do not add or remove any facts."""
-        user_prompt =f"""TEXT:
-            {attack_text}
-            """
-    
+        system_prompt = (
+            "You are a careful rewriter. Rephrase the following text without changing meaning, "
+            "tone or implied conditions. Do not add or remove any facts."
+        )
+        user_prompt = f"TEXT:\n{attack_text}\n"
         resp = client.chat.completions.create(
             model=model,
             temperature=0.7,
@@ -1706,46 +1700,71 @@ def generate_attack_with_budget(
             ],
         )
         text = (resp.choices[0].message.content or "").strip()
-        # 简单清理 code fence（以防万一）
+        # 清理 fence
         if text.startswith("```"):
             text = re.sub(r"^```[a-zA-Z0-9_+-]*\n?", "", text)
             text = re.sub(r"\n?```$", "", text).strip()
-            
         return text
 
-    client = _build_openai_client()
-    openai_model = getattr(args, "gpt_eval_model", "")
-    
-    tokenizer = llm.get_tokenizer()
-    is_qwen3 = _is_qwen3_thinker(args)
-    is_deep_r1 = _is_deepseek_r1_thinker(args)
+    def batch_paraphrase_attack_texts(texts, model: str, max_workers: int = 8):
+        """并发释义，保持输入顺序；失败时回退为原始文本。"""
+        client = _build_openai_client()
+        import concurrent.futures as cf
+        results = [None] * len(texts)
 
-    # 你的模板选择逻辑保留
+        with cf.ThreadPoolExecutor(max_workers=min(max_workers, len(texts))) as ex:
+            fut2idx = {
+                ex.submit(paraphrase_attack_info, client, t, model): i
+                for i, t in enumerate(texts)
+            }
+            for fut in cf.as_completed(fut2idx):
+                i = fut2idx[fut]
+                try:
+                    result_text = fut.result()
+                    # 如果为空字符串或 None，就回退原文
+                    if not result_text:
+                        results[i] = texts[i]
+                    else:
+                        results[i] = result_text
+                except Exception as e:
+                    print(f"[WARN] paraphrase failed for index {i}: {e}")
+                    results[i] = texts[i]   # 异常时直接回退原始输入
+
+        return results
+
+    # ---------- 公共准备 ----------
+    tokenizer = llm.get_tokenizer()
+    is_qwen3  = _is_qwen3_thinker(args)
+    is_deep_r1 = _is_deepseek_r1_thinker(args)
+    openai_model = getattr(args, "gpt_eval_model", "gpt-4.1-mini")
+    attack_info = (attack_information or "").strip()
+    inj_line_plain = f"[Importantly]: {attack_info}" if attack_info else ""
+
     custom_template_path = f"chat_templates/rana/{args.model.replace('/', '_')}.jinja"
     try:
         with open(custom_template_path, "r") as f:
             custom_template = f.read()
             print(f"Using custom chat template from {custom_template_path}")
     except FileNotFoundError:
-        custom_template = tokenizer.chat_template
+        custom_template = getattr(tokenizer, "chat_template", None)
 
     base_params = sampling_params.clone()
     N = len(prompts)
 
-    attack_info = (attack_information or "").strip()
-    inj_line_plain = f"[Importantly]: {attack_info}" if attack_info else ""
-
-    # =============== Qwen3 / DeepSeek R1（字符串生成） ===============
+    # =============== Qwen3 / DeepSeek-R1：字符串生成分支 ===============
     if is_qwen3 or is_deep_r1:
+        # 将 chat messages 渲染成字符串（启用 thinking）
         raw_prompt_strs = []
         for messages in prompts:
-            s = _apply_template_to_str(tokenizer, messages, enable_thinking=True, add_generation_prompt=True)
-            # 若模板以 <think> 结尾，补换行，确保从思考开始
+            s = _apply_template_to_str(
+                tokenizer, messages,
+                enable_thinking=True, add_generation_prompt=True
+            )
             if s.rstrip().endswith("<think>"):
                 s += "\n"
             raw_prompt_strs.append(s)
 
-        # 1) 初次思考 —— 使用 args.attack_budge 作为预算
+        # 1) 初次“思考”——限额
         first_params = base_params.clone()
         first_params.max_tokens = max(1, int(getattr(args, "attack_budge", 0) or 0))
         first_params.min_tokens = 1
@@ -1755,76 +1774,71 @@ def generate_attack_with_budget(
 
         first_outs = llm.generate(raw_prompt_strs, sampling_params=first_params)
 
-        # 结果容器
-        final_reasonings = [""] * N      # 完整思考（含注入）用于拼回输出
-        think_prompts_done = [""] * N    # 注入后/闭合后的“思考完成版”字符串 prompt
-        need_continue = [False] * N      # 标记哪些样本需要“放开预算继续生成”
-        continue_prompts = []            # 二次生成的输入
-        continue_map = []                # 记录 idx 映射
+        final_reasonings   = [""] * N
+        think_prompts_done = [""] * N
+        closed_idx, closed_para_texts = [], []
+        open_idx,   open_para_texts   = [], []
 
+        # 2) 不管闭不闭合，都组装“注入后待释义”的文本
         for i, out in enumerate(first_outs):
-            text = out.outputs[0].text
-            closed_in_budget = text.rstrip().endswith(end_think_token)
-
+            budget_text = out.outputs[0].text
+            closed_in_budget = budget_text.rstrip().endswith(end_think_token)
             if closed_in_budget:
-                # 2a) 已闭合：把 attack 信息插入到 </think> 之前
-                if inj_line_plain:
-                    if end_think_token in text:
-                        pos = text.rfind(end_think_token)
-                        text = text[:pos] + inj_line_plain + "\n" + text[pos:]
-                    else:
-                        # 保险：找不到闭合就直接附加后再保证闭合
-                        text = text + inj_line_plain
-                #TODO
-                print(f"Before attack: {text}")
-                text = paraphrase_attack_info(client, text, openai_model)
-                print(f"After attack: {text}")
-
-                # 规范闭合
-                text = _ensure_close_with_phrase(text, end_think_token)
-                final_reasonings[i] = text
-                # 构造“思考完成版”的 prompt（供答案阶段使用）
-                think_prompts_done[i] = raw_prompt_strs[i] + text
+                # 已闭合：在 </think> 前插入 attack 信息
+                if inj_line_plain and end_think_token in budget_text:
+                    pos = budget_text.rfind(end_think_token)
+                    to_para = budget_text[:pos] + inj_line_plain + "\n" + budget_text[pos:]
+                else:
+                    to_para = budget_text + (("\n" + inj_line_plain) if inj_line_plain else "")
+                closed_idx.append(i)
+                closed_para_texts.append(to_para)
             else:
-                # 2b) 未闭合：把 attack 信息追加到已生成思考末尾，然后放开预算继续生成
-                appended = text
-                if inj_line_plain:
-                    appended += inj_line_plain + "\n"
-                #TODO
-                print(f"Before attack: {appended}")
-                appended = paraphrase_attack_info(client, appended, openai_model)
-                print(f"After attack: {appended}")
+                # 未闭合：把注入追加到预算文本末尾（还未继续生成）
+                to_para = budget_text + (("\n" + inj_line_plain) if inj_line_plain else "")
+                open_idx.append(i)
+                open_para_texts.append(to_para)
 
-                # 作为继续生成的起点
-                cont_prompt = raw_prompt_strs[i] + appended
+        # 2.1) 并发释义（已闭合样本）
+        if closed_para_texts:
+            para_closed = batch_paraphrase_attack_texts(
+                closed_para_texts, model=openai_model, max_workers=getattr(args, "parallel_workers", 8)
+            )
+            for j, idx in enumerate(closed_idx):
+                text = _ensure_close_with_phrase(para_closed[j], end_think_token)
+                final_reasonings[idx]   = text
+                think_prompts_done[idx] = raw_prompt_strs[idx] + text
+
+        # 2.2) 并发释义（未闭合样本）→ 3) 再继续生成直到闭合
+        if open_para_texts:
+            para_open = batch_paraphrase_attack_texts(
+                open_para_texts, model=openai_model, max_workers=getattr(args, "parallel_workers", 8)
+            )
+            continue_prompts, continue_map = [], []
+            for j, idx in enumerate(open_idx):
+                cont_prompt = raw_prompt_strs[idx] + para_open[j]
                 continue_prompts.append(cont_prompt)
-                continue_map.append(i)
-                need_continue[i] = True
+                continue_map.append(idx)
 
-        # 3) 对未闭合样本放开预算继续生成至闭合
-        if continue_prompts:
             cont_params = base_params.clone()
-            # “自由生成”：给一个较大的上限，由 stop 控制闭合
-            cont_params.max_tokens = max(512, int(getattr(args, "max_tokens", 2048)-500))
+            cont_params.max_tokens = 2048
             cont_params.min_tokens = 1
             cont_params.stop = [end_think_token, f" {end_think_token}"]
             cont_params.skip_special_tokens = False
             cont_params.include_stop_str_in_output = True
 
             cont_outs = llm.generate(continue_prompts, sampling_params=cont_params)
-
             for k, out in enumerate(cont_outs):
-                idx = continue_map[k]
+                idx   = continue_map[k]
                 extra = out.outputs[0].text
-                # 拼出完整思考并规范闭合
-                full_think = continue_prompts[k][len(raw_prompt_strs[idx]):] + extra
+                full_think = para_open[k] + extra
                 full_think = _ensure_close_with_phrase(full_think, end_think_token)
-                final_reasonings[idx] = full_think
+                final_reasonings[idx]   = full_think
                 think_prompts_done[idx] = raw_prompt_strs[idx] + full_think
 
-        # 4) 答案阶段（基于“最终完整 CoT”）
+        # 4) 答案阶段（基于完整 CoT）
         answer_params = base_params.clone()
-        answer_budget = 1000
+        # 给答案留足空间，防止负数
+        answer_budget = max(128, int(getattr(args, "max_tokens", 8000)) - 2048 - int(getattr(args, "attack_budge", 1000) or 0))
         answer_params.max_tokens = answer_budget
 
         ans_outs = llm.generate(think_prompts_done, sampling_params=answer_params)
@@ -1832,20 +1846,16 @@ def generate_attack_with_budget(
         outputs = []
         for i, ans in enumerate(ans_outs):
             answer_text = ans.outputs[0].text
-            # 清理可能重复的闭合标记
             if answer_text.endswith(end_think_token):
                 answer_text = answer_text[:-len(end_think_token)]
             if answer_text.startswith(end_think_token):
                 answer_text = answer_text[len(end_think_token):]
-
             ans.outputs[0].text = final_reasonings[i] + answer_text
-            ans.prompt = raw_prompt_strs[i]  # 记录原始思考起点（可按需改成 think_prompts_done[i]）
+            ans.prompt = raw_prompt_strs[i]
             outputs.append(ans)
-
         return outputs
 
     # =============== 非 Qwen3（chat）分支 ===============
-    # 对 chat 场景：把“思考阶段”追加在最后一条消息的 content 里（与原实现一致）
     N = len(prompts)
     first_params = base_params.clone()
     first_params.max_tokens = max(1, int(getattr(args, "attack_budge", 0) or 0))
@@ -1856,7 +1866,7 @@ def generate_attack_with_budget(
 
     active_msgs = [deepcopy(m) for m in prompts]
 
-    # 1) 初次思考（有预算）
+    # 1) 初次思考（限额）
     first_outs = llm.chat(
         active_msgs,
         sampling_params=first_params,
@@ -1866,53 +1876,55 @@ def generate_attack_with_budget(
     )
 
     final_reasonings = [""] * N
-    think_msgs_done = [None] * N      # 注入/闭合后的 messages
-    need_continue = [False] * N
-    continue_msgs = []
-    continue_map = []
+    think_msgs_done  = [None] * N
+
+    closed_idx, closed_para_texts = [], []
+    open_idx,   open_para_texts   = [], []
 
     for i, out in enumerate(first_outs):
-        text = out.outputs[0].text
-        closed_in_budget = text.rstrip().endswith(end_think_token)
-
+        budget_text = out.outputs[0].text
+        closed_in_budget = budget_text.rstrip().endswith(end_think_token)
         if closed_in_budget:
-            # 已闭合：在 </think> 前插入
-            if inj_line_plain:
-                if end_think_token in text:
-                    pos = text.rfind(end_think_token)
-                    text = text[:pos] + inj_line_plain + "\n" + text[pos:]
-                else:
-                    text = text + inj_line_plain
-        
-            print(f"Before attack: {text}")
-            text = paraphrase_attack_info(client, text, openai_model)
-            print(f"After attack: {text}")
-            text = _ensure_close_with_phrase(text, end_think_token)
-            final_reasonings[i] = text
-
-            # 把思考写回 messages
-            msgs = deepcopy(active_msgs[i])
-            msgs[-1]["content"] += text
-            think_msgs_done[i] = msgs
+            # 已闭合：插入 attack 信息后做 paraphrase
+            if inj_line_plain and end_think_token in budget_text:
+                pos = budget_text.rfind(end_think_token)
+                to_para = budget_text[:pos] + inj_line_plain + "\n" + budget_text[pos:]
+            else:
+                to_para = budget_text + (("\n" + inj_line_plain) if inj_line_plain else "")
+            closed_idx.append(i)
+            closed_para_texts.append(to_para)
         else:
-            # 未闭合：末尾追加 attack，再继续生成
-            appended = text
-            if inj_line_plain:
-                appended += inj_line_plain + "\n"
-            print(f"Before Attack is {appended}")
-            appended = paraphrase_attack_info(client, appended, openai_model)
-            print(f"After Attack is {appended}")
-            msgs = deepcopy(active_msgs[i])
-            msgs[-1]["content"] += appended
+            # 未闭合：将注入追加到预算文本末尾，先 paraphrase
+            to_para = budget_text + (("\n" + inj_line_plain) if inj_line_plain else "")
+            open_idx.append(i)
+            open_para_texts.append(to_para)
 
+    # 2.1) 已闭合样本：并发释义并直接闭合
+    if closed_para_texts:
+        para_closed = batch_paraphrase_attack_texts(
+            closed_para_texts, model=openai_model, max_workers=getattr(args, "parallel_workers", 8)
+        )
+        for j, idx in enumerate(closed_idx):
+            full_think = _ensure_close_with_phrase(para_closed[j], end_think_token)
+            msgs = deepcopy(active_msgs[idx])
+            msgs[-1]["content"] += full_think
+            final_reasonings[idx] = full_think
+            think_msgs_done[idx]  = msgs
+
+    # 2.2) 未闭合样本：并发释义 → 3) 再继续生成直到闭合
+    if open_para_texts:
+        para_open = batch_paraphrase_attack_texts(
+            open_para_texts, model=openai_model, max_workers=getattr(args, "parallel_workers", 8)
+        )
+        continue_msgs, continue_map = [], []
+        for j, idx in enumerate(open_idx):
+            msgs = deepcopy(active_msgs[idx])
+            msgs[-1]["content"] += para_open[j]  # 先写回释义后的注入
             continue_msgs.append(msgs)
-            continue_map.append(i)
-            need_continue[i] = True
+            continue_map.append(idx)
 
-    # 2) 放开预算继续生成直到闭合
-    if continue_msgs:
         cont_params = base_params.clone()
-        cont_params.max_tokens = max(512, int(getattr(args, "max_tokens", 2048)-500))
+        cont_params.max_tokens = 2048
         cont_params.min_tokens = 1
         cont_params.stop = [end_think_token, f" {end_think_token}"]
         cont_params.skip_special_tokens = False
@@ -1927,27 +1939,20 @@ def generate_attack_with_budget(
         )
 
         for k, out in enumerate(cont_outs):
-            idx = continue_map[k]
+            idx   = continue_map[k]
             extra = out.outputs[0].text
-
-            msgs = deepcopy(continue_msgs[k])
-            msgs[-1]["content"] += extra
-
-            # 提取“只思考部分”（从首次思考起已经在 msgs[-1] 中累积）
-            # 这里直接从我们加的 appended 起算：
-            # 但为了简单，直接把新增的文本（初次思考+注入+继续生成）总称为 full_think：
-            full_think = msgs[-1]["content"][len(active_msgs[idx][-1]["content"]):]
+            full_think = para_open[k] + extra
             full_think = _ensure_close_with_phrase(full_think, end_think_token)
 
-            # 修正 msgs[-1]["content"] 为闭合后的版本
-            msgs[-1]["content"] = active_msgs[idx][-1]["content"] + full_think
+            msgs_done = deepcopy(active_msgs[idx])
+            msgs_done[-1]["content"] += full_think
 
             final_reasonings[idx] = full_think
-            think_msgs_done[idx] = msgs
+            think_msgs_done[idx]  = msgs_done
 
-    # 3) 答案阶段（基于最终完整 CoT）
+    # 4) 答案阶段
     answer_params = base_params.clone()
-    answer_budget = 1000
+    answer_budget = max(128, int(getattr(args, "max_tokens", 8000)) - 2048 - int(getattr(args, "attack_budge", 1000) or 0))
     answer_params.max_tokens = answer_budget
 
     ans_outs = llm.chat(
@@ -1967,6 +1972,7 @@ def generate_attack_with_budget(
             answer_text = answer_text[len(end_think_token):]
 
         ans.outputs[0].text = final_reasonings[i] + answer_text
+        # 记录渲染后的“原始提示”（便于复现）
         ans.prompt = tokenizer.apply_chat_template(
             prompts[i],
             chat_template=custom_template,
@@ -1977,6 +1983,7 @@ def generate_attack_with_budget(
         outputs.append(ans)
 
     return outputs
+
 
     
 def generate_with_budget(

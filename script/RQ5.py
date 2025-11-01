@@ -23,18 +23,18 @@ def run_delete_experiment():
     SCENARIORS = ["func_edu", "func_job", "multi_med"]
     MODEL = [
     "/home/tangxinran/QueryAttack/models/Llama-3.1-8B-Instruct",
-    # "/home/tangxinran/QueryAttack/models/Qwen2.5-Coder-7B-Instruct",
+    "/home/tangxinran/QueryAttack/models/Qwen2.5-Coder-7B-Instruct",
     "/home/tangxinran/QueryAttack/models/Qwen3-8B",
     # "/home/tangxinran/QueryAttack/models/Llama2-13B",
-    # "/home/tangxinran/.cache/huggingface/hub/models--deepseek-ai--DeepSeek-R1-Distill-Llama-8B/snapshots/6a6f4aa4197940add57724a7707d069478df56b1",
+    "/home/tangxinran/.cache/huggingface/hub/models--deepseek-ai--DeepSeek-R1-Distill-Llama-8B/snapshots/6a6f4aa4197940add57724a7707d069478df56b1",
     # "/home/tangxinran/QueryAttack/models/Qwen3-14B",
     # "/home/tangxinran/QueryAttack/models/qwen3-32B",
-    # "/home/tangxinran/QueryAttack/models/deepseek-coder-7b-instruct-v1.5",
-    # "/home/tangxinran/QueryAttack/models/CodeLlama-7b-Instruct-hf",
+    "/home/tangxinran/QueryAttack/models/deepseek-coder-7b-instruct-v1.5",
+    "/home/tangxinran/QueryAttack/models/CodeLlama-7b-Instruct-hf",
     # "/home/tangxinran/QueryAttack/models/DeepSeek-R1-Distill-Qwen-7B"
     ]
     PROMPT_TYPES = ["cot"]
-    attack_budges = [50, 100, 300, 500]
+    attack_budges = [50, 100, 300]
     for model in MODEL:
         for scen in SCENARIORS:
             scenarior_path = os.path.join(".", scen)

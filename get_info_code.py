@@ -739,9 +739,38 @@ if __name__ == "__main__":
     #             eval_edu(folder_name, evaluation_model, write)
 
 
-    #RQ4
+    # #RQ4
+    # evaluation_models = [
+    #     # "Llama-3.1-8B-Instruct",
+    #     # "Qwen2.5-Coder-7B-Instruct",
+    #     # "Qwen3-8B",
+    #     # "Llama2-13B",
+    #     # "6a6f4aa4197940add57724a7707d069478df56b1",
+    #     # "Qwen3-14B",
+    #     # "qwen3-32B",
+    #     # "deepseek-coder-7b-instruct-v1.5",
+    #     "CodeLlama-7b-Instruct-hf",
+    #     # "DeepSeek-R1-Distill-Qwen-7B",
+    #     ]
+    # prompt = ["cot"]
+    # Strategy = "RAnA"
+    # write = True
+    # for evaluation_model in evaluation_models:
+    #     for prompt_type in prompt:
+    #         folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_Any/func_job/"
+    #         eval_job(folder_name, evaluation_model, write)
+    #         print("\n----------------\n")
+    #         folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_Any/multi_med/medical/"
+    #         eval_med(folder_name, evaluation_model, write)
+    #         print("\n----------------\n")
+    #         folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_Any/func_edu/"
+    #         eval_edu(folder_name, evaluation_model, write)
+    
+    
+    #RQ5
+
     evaluation_models = [
-        # "Llama-3.1-8B-Instruct",
+        "Llama-3.1-8B-Instruct",
         # "Qwen2.5-Coder-7B-Instruct",
         # "Qwen3-8B",
         # "Llama2-13B",
@@ -749,19 +778,21 @@ if __name__ == "__main__":
         # "Qwen3-14B",
         # "qwen3-32B",
         # "deepseek-coder-7b-instruct-v1.5",
-        "CodeLlama-7b-Instruct-hf",
+        # "CodeLlama-7b-Instruct-hf",
         # "DeepSeek-R1-Distill-Qwen-7B",
         ]
     prompt = ["cot"]
-    Strategy = "RAnA"
+    budge_limitations = [50,100,300,1000]
+    Strategy = "ATTACK"
     write = True
     for evaluation_model in evaluation_models:
         for prompt_type in prompt:
-            folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_Any/func_job/"
-            eval_job(folder_name, evaluation_model, write)
-            print("\n----------------\n")
-            folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_Any/multi_med/medical/"
-            eval_med(folder_name, evaluation_model, write)
-            print("\n----------------\n")
-            folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_Any/func_edu/"
-            eval_edu(folder_name, evaluation_model, write)
+            for budge_limitation in budge_limitations:
+                folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_{budge_limitation}/func_job/"
+                eval_job(folder_name, evaluation_model, write)
+                print("\n----------------\n")
+                folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_{budge_limitation}/multi_med/medical/"
+                eval_med(folder_name, evaluation_model, write)
+                print("\n----------------\n")
+                folder_name = f"results/{Strategy}/{evaluation_model}_{prompt_type}_{budge_limitation}/func_edu/"
+                eval_edu(folder_name, evaluation_model, write)

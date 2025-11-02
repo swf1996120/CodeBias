@@ -772,9 +772,9 @@ if __name__ == "__main__":
     evaluation_models = [
         # "Llama-3.1-8B-Instruct",
         # "Qwen2.5-Coder-7B-Instruct",
-        "Qwen3-8B",
+        # "Qwen3-8B",
         # "Llama2-13B",
-        # "6a6f4aa4197940add57724a7707d069478df56b1",
+        "6a6f4aa4197940add57724a7707d069478df56b1",
         # "Qwen3-14B",
         # "qwen3-32B",
         # "deepseek-coder-7b-instruct-v1.5",

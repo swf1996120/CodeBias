@@ -770,9 +770,9 @@ if __name__ == "__main__":
     #RQ5
 
     evaluation_models = [
-        "Llama-3.1-8B-Instruct",
+        # "Llama-3.1-8B-Instruct",
         # "Qwen2.5-Coder-7B-Instruct",
-        # "Qwen3-8B",
+        "Qwen3-8B",
         # "Llama2-13B",
         # "6a6f4aa4197940add57724a7707d069478df56b1",
         # "Qwen3-14B",
@@ -782,7 +782,7 @@ if __name__ == "__main__":
         # "DeepSeek-R1-Distill-Qwen-7B",
         ]
     prompt = ["cot"]
-    budge_limitations = [50,100,300,1000]
+    budge_limitations = [50,100,300]
     Strategy = "ATTACK"
     write = True
     for evaluation_model in evaluation_models:

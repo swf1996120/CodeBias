@@ -777,7 +777,7 @@ if __name__ == "__main__":
         # "6a6f4aa4197940add57724a7707d069478df56b1",
         # "Qwen3-14B",
         # "qwen3-32B",
-        "deepseek-coder-7b-instruct-v1.5",
+        # "deepseek-coder-7b-instruct-v1.5",
         # "CodeLlama-7b-Instruct-hf",
         # "DeepSeek-R1-Distill-Qwen-7B",
         ]
